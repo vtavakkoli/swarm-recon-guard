@@ -1,0 +1,15 @@
+name: pilot
+description: Fast repeated study for detector tuning and sanity checks.
+agent_counts: [10, 100, 1000]
+scenarios: [benign_flash, independent_recon, coordinated_swarm]
+repeats: 3
+requests_per_agent: 3
+concurrency: 128
+arrival_window_ms: 500
+seed: 20261005
+baseline_identity_request_limit: 20
+detector:
+  threshold: 0.72
+  min_events: 30
+  consecutive_windows: 2
+  evaluation_interval: 100

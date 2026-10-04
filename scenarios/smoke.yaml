@@ -1,0 +1,15 @@
+name: smoke
+description: Minimal end-to-end CI validation.
+agent_counts: [10, 30]
+scenarios: [benign_flash, independent_recon, coordinated_swarm]
+repeats: 1
+requests_per_agent: 3
+concurrency: 32
+arrival_window_ms: 50
+seed: 20261005
+baseline_identity_request_limit: 20
+detector:
+  threshold: 0.72
+  min_events: 20
+  consecutive_windows: 2
+  evaluation_interval: 20
