@@ -1,0 +1,93 @@
+name: swarm-recon-guard
+
+x-common: &common
+  build: .
+  networks: [labnet]
+  restart: "no"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: ["ALL"]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks: [labnet]
+    read_only: true
+    tmpfs:
+      - /data
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 1s
+      retries: 30
+
+  target:
+    <<: *common
+    entrypoint: ["uvicorn", "swarmguard.target.app:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]
+    environment:
+      LAB_SEED: "20261005"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=1)"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  gateway:
+    <<: *common
+    entrypoint: ["uvicorn", "swarmguard.gateway.app:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "warning"]
+    environment:
+      TARGET_BASE_URL: "http://target:8000"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      redis:
+        condition: service_healthy
+      target:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=1)"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  detector:
+    <<: *common
+    entrypoint: ["uvicorn", "swarmguard.detector.app:app", "--host", "0.0.0.0", "--port", "8090", "--log-level", "warning"]
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      DETECTOR_STREAM: "swarmguard:events"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=1)"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  experiment:
+    <<: *common
+    user: "${SWARM_UID:-1000}:${SWARM_GID:-1000}"
+    environment:
+      HOME: "/tmp"
+      GATEWAY_URL: "http://gateway:8080"
+      DETECTOR_URL: "http://detector:8090"
+      RESULT_ROOT: "/app/results"
+    volumes:
+      - ./results:/app/results
+      - ./scenarios:/app/scenarios:ro
+    depends_on:
+      gateway:
+        condition: service_healthy
+      detector:
+        condition: service_healthy
+
+networks:
+  labnet:
+    internal: true
