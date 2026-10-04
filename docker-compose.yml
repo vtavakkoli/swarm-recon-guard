@@ -14,11 +14,12 @@ x-common: &common
 services:
   redis:
     image: redis:7.4-alpine
+    user: "redis"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     networks: [labnet]
     read_only: true
     tmpfs:
-      - /data
+      - /data:mode=1777
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
