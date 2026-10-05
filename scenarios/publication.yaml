@@ -13,3 +13,9 @@ detector:
   min_events: 30
   consecutive_windows: 2
   evaluation_interval: 100
+statistical:
+  enabled: true
+  alpha: 0.01
+  shrinkage: 0.10
+  hybrid_weight: 0.50
+  validation_modes: [leave_repeat_out, leave_scale_out]
