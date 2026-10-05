@@ -485,7 +485,7 @@ For the full experimental and statistical specification, see:
 
 - **Vahid Tavakkoli**
 - **Kabeh Mohsenzadegan**
-- **[Kyamakya Kyandoghere](https://www.google.com/goto?url=CAESZQHrOzAVj_qQh27OtDuU4ZqEZxs9T08MhWJS-5QOn88ZSCUCgqGjN_vJ-sacg7w5htkcX0MeFqdEZqCT-DXntesv6Ji9WF_6f74WZlR3NcxvpBB1bWuIPvVKV0J2OSKKQLnDHKNB)**
+- **Kyamakya Kyandoghere**
 
 ## Citation
 
