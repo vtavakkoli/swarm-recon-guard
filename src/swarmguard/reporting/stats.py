@@ -32,9 +32,14 @@ def auroc(labels:list[int],scores:list[float])->float:
 def average_precision(labels:list[int],scores:list[float])->float:
     ordered=sorted(zip(scores,labels),key=lambda x:x[0],reverse=True); positives=sum(labels)
     if positives==0: return float("nan")
-    tp=0; precision_sum=0.0
-    for idx,(_,label) in enumerate(ordered,start=1):
-        if label: tp+=1; precision_sum+=tp/idx
+    tp=0; precision_sum=0.0; i=0
+    while i<len(ordered):
+        j=i+1
+        while j<len(ordered) and ordered[j][0]==ordered[i][0]: j+=1
+        group_positive=sum(label for _,label in ordered[i:j])
+        tp+=group_positive
+        precision_sum+=group_positive*tp/j
+        i=j
     return precision_sum/positives
 
 def wilson_interval(successes:int,n:int,z:float=1.96)->tuple[float,float]:

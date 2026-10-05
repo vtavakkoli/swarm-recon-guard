@@ -1,21 +1,24 @@
 name: smoke
-description: Minimal end-to-end CI validation.
-agent_counts: [10, 30]
-scenarios: [benign_flash, independent_recon, coordinated_swarm]
+description: All methods and traffic controls in a compact Docker end-to-end suite.
+agent_counts: [10, 40]
+scenarios: [benign_flash, benign_diagnostic, benign_explorer, benign_bulk, independent_recon, coordinated_swarm, swarm_no_diagnostic, matched_swarm, camouflaged_swarm, low_and_slow_swarm, mixed_swarm]
 repeats: 3
 requests_per_agent: 3
 concurrency: 32
 arrival_window_ms: 50
 seed: 20261005
+attacker_fraction: 0.20
+camouflage_fraction: 0.50
+slow_delay_s: 0.02
+strict_telemetry: true
+save_event_traces: true
 baseline_identity_request_limit: 20
-detector:
-  threshold: 0.72
-  min_events: 20
-  consecutive_windows: 2
-  evaluation_interval: 20
+detector: {threshold: 0.72, min_events: 10, consecutive_windows: 2, evaluation_interval: 100}
+online: {enabled: true, window_events: 32, window_seconds: 0.5, min_window_events: 8, rff_dimensions: 32, mmd_history: 4}
+calibration: {source: http, training_repeats: 2, streams: 24, alpha: 0.10}
 statistical:
   enabled: true
-  alpha: 0.01
-  shrinkage: 0.10
+  alpha: 0.10
+  shrinkage: 0.15
   hybrid_weight: 0.50
-  validation_modes: [leave_repeat_out, leave_scale_out]
+  validation_modes: [leave_repeat_out, leave_scale_out, leave_attack_out]

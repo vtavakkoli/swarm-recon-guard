@@ -134,6 +134,15 @@ def _splits(rows: list[dict[str, object]], mode: str) -> list[tuple[str, list[di
     if mode == "leave_scale_out":
         values = sorted({int(r["agent_count"]) for r in rows})
         return [(f"agents={v}", [r for r in rows if int(r["agent_count"]) != v], [r for r in rows if int(r["agent_count"]) == v]) for v in values]
+    if mode == "leave_attack_out":
+        attacks = sorted({str(r["scenario"]) for r in rows if int(r["label"]) == 1})
+        repeats = sorted({int(r["repeat"]) for r in rows})
+        return [
+            (f"attack={attack}",
+             [r for r in rows if r["scenario"] != attack and not (int(r["label"]) == 0 and int(r["repeat"]) == repeats[i % len(repeats)])],
+             [r for r in rows if r["scenario"] == attack or (int(r["label"]) == 0 and int(r["repeat"]) == repeats[i % len(repeats)])])
+            for i, attack in enumerate(attacks)
+        ]
     raise ValueError(f"unknown validation mode: {mode}")
 
 
@@ -152,7 +161,14 @@ def evaluate_distributional(
     for mode in validation_modes:
         mode_rows: list[dict[str, object]] = []
         for fold_name, train, test in _splits(rows, mode):
-            train_benign = [r for r in train if int(r["label"]) == 0]
+            all_benign = [r for r in train if int(r["label"]) == 0]
+            # Nested, run-grouped calibration is disjoint from density fitting.
+            repeat_values = sorted({int(r["repeat"]) for r in all_benign})
+            if len(repeat_values) < 2:
+                continue
+            calibration_repeat = repeat_values[-1]
+            calibration_benign = [r for r in all_benign if int(r["repeat"]) == calibration_repeat]
+            train_benign = [r for r in all_benign if int(r["repeat"]) != calibration_repeat]
             train_attack = [r for r in train if int(r["label"]) == 1]
             if len(train_benign) < 3 or len(train_attack) < 3:
                 continue
@@ -167,7 +183,8 @@ def evaluate_distributional(
             llr_mu, llr_std = float(np.mean(train_llr)), float(np.std(train_llr, ddof=1))
 
             train_scores = _score_set(train_benign, benign_model, attack_model, h_mu, h_std, llr_mu, llr_std, hybrid_weight)
-            thresholds = {name: _quantile_higher(values, 1.0 - alpha) for name, values in train_scores.items()}
+            calibration_scores = _score_set(calibration_benign, benign_model, attack_model, h_mu, h_std, llr_mu, llr_std, hybrid_weight)
+            thresholds = {name: _quantile_higher(values, 1.0 - alpha) for name, values in calibration_scores.items()}
             test_scores = _score_set(test, benign_model, attack_model, h_mu, h_std, llr_mu, llr_std, hybrid_weight)
 
             for i, row in enumerate(test):
@@ -183,6 +200,8 @@ def evaluate_distributional(
                         "score": float(values[i]),
                         "threshold": float(thresholds[detector]),
                         "detected": bool(values[i] > thresholds[detector]),
+                        "n_calibration": len(calibration_benign),
+                        "calibration_resolution": 1.0 / (len(calibration_benign) + 1),
                     }
                     score_rows.append(rec)
                     mode_rows.append(rec)
@@ -269,12 +288,17 @@ def evaluate_distributional(
 
 
 def gaussian_diagnostics(benign_rows: list[dict[str, object]]) -> dict[str, object]:
+    if len(benign_rows) < 3:
+        return {"n_benign": len(benign_rows), "interpretation": "Insufficient independent benign runs for normality diagnostics."}
     x = vectorize(benign_rows)
     n, p = x.shape
     feature_tests = {}
     for idx, feature in enumerate(FEATURES):
-        stat, pvalue = shapiro(x[:, idx])
-        feature_tests[feature] = {"shapiro_w": float(stat), "p_value": float(pvalue)}
+        if np.ptp(x[:, idx]) < 1e-10:
+            feature_tests[feature] = {"shapiro_w": None, "p_value": None, "constant": True}
+        else:
+            stat, pvalue = shapiro(x[:, idx])
+            feature_tests[feature] = {"shapiro_w": float(stat), "p_value": float(pvalue), "constant": False}
 
     model = GaussianModel.fit(x, shrinkage=0.0, ridge=1e-8)
     centered = x - model.mean
@@ -297,5 +321,5 @@ def gaussian_diagnostics(benign_rows: list[dict[str, object]]) -> dict[str, obje
         "univariate_shapiro": feature_tests,
         "mardia_skewness": {"b1p": b1p, "chi_square": skew_stat, "df": skew_df, "p_value": skew_p},
         "mardia_kurtosis": {"b2p": b2p, "expected": expected, "z": float(z), "p_value": kurt_p},
-        "interpretation": "Small p-values indicate that a single Gaussian is an approximation; use LLR/OOD as baselines and compare with richer models.",
+        "interpretation": "Pooled diagnostics mix workload regimes and population scales. Small p-values can reflect this heterogeneity; Gaussian LLR/OOD are approximation baselines. Classical Mardia p-values also assume independent observations and nonsingular covariance.",
     }

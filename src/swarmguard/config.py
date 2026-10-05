@@ -8,6 +8,7 @@ ZONE_SPACE = 500
 TOTAL_SEMANTIC_SPACE = TICKET_SPACE + PERMIT_PREFIX_SPACE + ZONE_SPACE
 
 LAB_ALLOWED_GATEWAY_HOSTS = {"gateway", "localhost", "127.0.0.1"}
+LAB_ALLOWED_DETECTOR_HOSTS = {"detector", "localhost", "127.0.0.1"}
 
 
 @dataclass(frozen=True)

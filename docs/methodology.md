@@ -1,183 +1,128 @@
-# Methodology
+# Methodology — SwarmReconGuard v0.3
 
-## Experimental factors
+## Estimands and observation boundary
 
-The default publication matrix varies two controlled factors:
+The experiment asks whether population-level evidence can reveal collective reconnaissance when individual request budgets are ordinary. Classification labels describe controlled policies; they are not directly observable intent.
 
-- traffic regime: `benign_flash`, `independent_recon`, `coordinated_swarm`;
-- population size: 10, 100, 1,000 and 10,000 virtual agents.
+The defender receives timestamp, synthetic identity, resource family/key, numeric key, diagnostic flag, HTTP response metadata and an opaque trial stream id. It does not receive the scenario, attacker subset, policy seed or coordination state. Trial boundaries remain a supplied experimental condition.
 
-Each identity receives the same request budget. The publication profile uses 10 repeated trials per cell with deterministic but repeat-specific pseudo-random seeds.
+Four benign controls and seven attack regimes are evaluated at 10, 100, 1,000 and 10,000 identities with ten repetitions, totaling 440 test runs. Each identity makes three requests. Execution order within each population/repetition is independently shuffled to reduce order effects.
 
-## Synthetic service and ground truth
+Matched workload comparisons use the same population and repetition. Absolute latency and throughput depend on host hardware, container scheduling and background activity.
 
-The service exposes three harmless information surfaces:
+## Reference phases and leakage prevention
 
-1. **V001 — sequential ticket enumeration:** valid and invalid synthetic ticket identifiers produce distinguishable service responses.
-2. **V002 — permit prefix oracle:** a public two-character prefix lookup reveals synthetic aggregate counts over a finite namespace.
-3. **V003 — diagnostic disclosure:** an allowed `view=diagnostic` parameter returns unnecessary synthetic backend metadata.
+Publication training and calibration are separately measured HTTP traffic on the same service. Training uses three reference repetitions of four benign and two known-attack policies at every configured population: 72 streams. Calibration uses 299 independently selected benign streams. SHA-256 phase namespaces derive distinct seeds for every reference stream. Test seed/repetition tuples are not used for fitting.
 
-These are benchmark channels, not real exploits. The target contains no shell execution path and no external connectivity.
+Models, kernel bandwidth/features and fusion normalization use training windows only. Calibration contains benign traffic only. The trained detector bundle is installed before test traffic begins and stays fixed during the matrix.
 
-## Traffic regimes
+The alternative policy reference source is explicitly simulated: it creates semantic metadata from scripted actions and arrival policies without HTTP measurements. scale-ci.yaml uses this to shorten a capacity check. Reference provenance is saved in calibration.json and the report.
 
-### Benign flash crowd
+Raw reference events, reference windows and phase manifests are saved. Report regeneration consumes saved test outcomes and does not refit the online model.
 
-Users concentrate on a small hot subset of tickets and zones and repeatedly use a small set of common permit prefixes. This creates high legitimate concurrency, collisions and locality.
+## Windows and graph descriptors
 
-### Independent reconnaissance
+Windows do not overlap or reuse events. The first publication window contains 16 events. Subsequent windows close after 64 events or after at least eight events and one second of event time. Final partial windows are scored explicitly; no events are discarded. Request count and observed identity count enter the conditional model, including short tails.
 
-Agents sample each namespace independently and uniformly. They obtain broad coverage but duplicate work because there is no coordination.
+Six original bounded features describe window novelty, namespace extent, identifier-gap regularity, diagnostic ratio, family entropy and namespace coverage. The transparent score uses:
 
-### Coordinated swarm
+`R = .18 novelty + .22 span + .20 gaps + .15 diagnostics + .15 entropy + .10 coverage_pressure`.
 
-Agents use deterministic stratified partitioning. Each identity remains low-rate, but the population covers the namespaces with minimal redundant work.
+The legacy cumulative detector retains its fixed 0.72 threshold and two-evaluation requirement. Its evaluation interval is shortened for small request budgets so a 30-request run can actually complete two evaluations.
 
-## Defender features
+The graph is a timestamped bipartite multigraph connecting observed identities with one of 16 normalized regions per resource family. Its descriptors are:
 
-The v0.1 transparent detector computes:
+- **Cross-identity novelty:** one minus the fraction of requests repeating a resource already requested by another identity.
+- **Region balance:** average inverse coefficient-of-variation measure across the region counts of each family.
+- **Region entropy:** average Shannon entropy over the 16 regions, normalized by log(16).
+- **Identity specialization:** average one minus the normalized resource-family entropy per identity.
+- **Temporal progression:** average absolute time/resource-position correlation for eligible families.
+- **Component fraction:** fraction of observed identity nodes in the largest identity/resource-region connected component.
 
-- **novelty ratio**: unique semantic resources / total requests;
-- **namespace span**: normalized min-to-max span across numeric resource families;
-- **gap uniformity**: regularity of adjacent gaps in sorted observed identifiers;
-- **diagnostic ratio**: fraction of allowed diagnostic requests;
-- **family entropy**: normalized entropy of resource-family exploration;
-- **coverage pressure**: semantic coverage relative to a fixed early-warning budget.
+Cumulative cross-identity novelty and region balance track complementary work across window boundaries with constant-time per-event counters. Conditional semantic models also include cumulative novelty and coverage. The original unconditional Gaussian baselines retain the six window features for comparison.
 
-The fixed v0.1 risk score is
+No descriptor relies on the spelling or sort order of identity labels. Graph extraction is linear in window edges apart from bounded-window numeric operations; it avoids an all-pairs identity matrix. The graph anomaly score is conditional Mahalanobis distance on these descriptors, not a GNN.
 
-\[
-R = 0.18N + 0.22S + 0.20G + 0.15D + 0.15H + 0.10C.
-\]
+Reduced duplication can reflect cooperative partitioning. Broad legitimate workflows can also do this, so benign_bulk and benign_explorer are necessary hard controls. Complete equality of observable joint distributions would make different intentions unidentifiable to this observer.
 
-The detector has no scenario label and no attacker-internal signal. The fixed score is a baseline, not a claim of optimality. Later work should compare graph, sequential, Bayesian and learned detectors on exactly the same raw traces.
+## Density models and observable context
 
-## Collective semantic coverage
+Bounded features are clipped to [1e-5, 1 - 1e-5] and logit transformed. Gaussian covariances shrink toward a scaled identity matrix with a ridge term. Shrinkage improves numerical stability; it does not prove the true distribution Gaussian.
 
-Let the synthetic observable state be \(\mathcal{S}\). Every request resolves one semantic resource key. At time \(t\),
+The unconditional OOD baseline fits one benign Gaussian. The unconditional LLR uses a scenario-grouped known-attack Gaussian mixture against it.
 
-\[
-C(t)=\frac{|\cup_{i \le t}\phi(q_i)|}{|\mathcal{S}|}.
-\]
+Conditional benign and attack models fit separate reference-workload components. Each component regresses transformed features on:
 
-The benchmark additionally records **exposure before detection**:
+`c = [1, log(1+window_requests), log(1+window_identities), log(1+cumulative_requests), log(1+cumulative_identities)]`.
 
-\[
-EBD = C(t_{alarm}).
-\]
+Residuals receive a regularized Gaussian model. At prediction, densities mix all components; the observed test scenario is not used to select a component. Conditional OOD uses the closest benign component's residual distance. Conditional LLR is log attack density minus log benign density.
 
-A detector that alarms only after most of the service namespace has been learned is operationally weak even if its final classification is correct.
+Component weights follow the training-window counts, which means long reference streams contribute more windows. Reported calibration and per-workload false alarms are essential checks on this modeling choice.
 
-## Statistical reporting
+## Kernel comparison, fusion and sequential alarms
 
-For every scenario/population cell, run-level metrics are summarized as:
+kernel_mmd uses a Gaussian kernel approximated with fixed random Fourier features. The bandwidth comes from training residual distances, with a bounded reference sample of 512 windows. The statistic compares the mean embedding of recent observed context residuals with the training benign reference mean. Up to eight recent windows contribute. It is a nonparametric comparison baseline, not an exact unbiased finite-sample MMD or permutation p-value.
 
-- arithmetic mean;
-- sample standard deviation (Bessel correction);
-- two-sided 95% confidence interval using the Student-t critical value.
+The pointwise hybrid equally combines benign-training-standardized heuristic, conditional LLR and graph scores. Each leave-one-component-out ablation receives its own calibrated threshold.
 
-The report also computes run-level AUROC and average precision using `detector_score_peak`, with `benign_flash` as the negative class and the two reconnaissance regimes as the positive class.
+CUSUM accumulates the conditional log-likelihood ratio:
 
-A future paper should additionally report effect sizes, sensitivity analysis for detector thresholds, calibration curves, ablations over each feature, and external validation on at least one independently implemented synthetic service.
+`S_t = max(0, S_(t-1) + log p_A(x_t | c_t) - log p_B(x_t | c_t))`.
 
-## SLA evaluation
+Hybrid CUSUM instead accumulates fused standardized evidence minus a configured drift allowance (0.5). It is a score-based sequential comparator, not an exact likelihood ratio.
 
-The gateway publishes telemetry on a best-effort basis and does not fail closed when telemetry storage is unavailable. Client-observed p50/p95/p99 latency, throughput and transport-error rate are reported for every cell. This makes it possible to test security separation without hiding service degradation.
+History and sequential state reset at the start of each trial stream. The detector evaluates all identities in that stream, including benign background in mixed_swarm. It never resets per true attacker group.
 
-## Reproducibility cautions
+## Calibration unit and false-alarm target
 
-Container CPU scheduling and host hardware influence absolute throughput and latency. For publication, record host CPU, memory, Docker version and operating system alongside the generated manifest. Run all compared scenarios on the same host under controlled background load.
+For every detector, the calibration score is its maximum over the **whole benign stream**, including sequential state and MMD history. This calibrates a one-alarm-per-stream policy rather than treating each repeated window test as an independent 1% test.
 
-## Distributional detection (v0.2)
+For n independent benign streams and target alpha, take ordered maximum score at rank ceil((n + 1)(1 - alpha)), with strict greater-than alarms. If the rank exceeds n, thresholds are infinite and the report flags insufficient resolution. Infinite thresholds are serialized as null, not invalid JSON infinities.
 
-Version 0.2 adds a second detection dimension that is evaluated alongside the original transparent heuristic score.
+The rank argument requires exchangeable calibration/test benign streams and a comparable horizon. Mixed population sizes, workload shifts, changing service behavior or longer monitoring periods can violate the assumptions. Nominal 1% is an experimental target; measured FPR with Wilson intervals is reported overall and by workload/population. There is no claimed distribution-free conditional guarantee for every scale or production site.
 
-For every completed run, the defender constructs the bounded collective feature vector
+## Policy variation and hard controls
 
-\[
-\\mathbf{x} = [N, S, G, D, H, C],
-\]
+Coordinated actions use independent seeded resource-family permutations plus within-stratum jitter. This changes both actions and arrival schedules between repeats and avoids a convenient shared identity/resource rank.
 
-where \(N\) is novelty ratio, \(S\) namespace span, \(G\) gap uniformity, \(D\) diagnostic ratio, \(H\) family entropy, and \(C\) semantic coverage. Each bounded feature is logit-transformed before fitting.
+matched_swarm and benign_explorer use approximately uniform individual resource marginals and the same low diagnostic probability. Collective sampling is stratified for the swarm and independent for the benign control. This is an approximate marginal matching design; no claim is made that every complete individual joint distribution is equal.
 
-### Benign Gaussian model
+swarm_no_diagnostic removes diagnostic access. benign_diagnostic gives legitimate clients access to that channel. camouflaged_swarm mixes hot requests with stratified choices. low_and_slow_swarm adds seeded inter-request delays. mixed_swarm hides a seeded 20% attacker subset inside benign traffic without exposing special attacker identities to the detector.
 
-The null model is a regularized multivariate Gaussian estimated only from benign training folds:
+The three synthetic information channels are ticket-existence/status enumeration, a permit-prefix count oracle and unnecessary zone diagnostic metadata. Cooperative discovery is evaluated on pooled attacker observations; independent discovery uses individual findings. Population-wide findings and received byte counts are separately recorded. These labels measure the synthetic benchmark, not host exploitation.
 
-\[
-H_0: \\mathbf{x} \\sim \\mathcal{N}(\\boldsymbol{\\mu}_0, \\boldsymbol{\\Sigma}_0).
-\]
+## Outcome metrics and missed detections
 
-A shrinkage covariance estimator is used to remain numerically stable when the number of observations is modest. The Gaussian out-of-distribution score is the squared Mahalanobis distance
+- Detection and benign false alarms are binary complete-run outcomes.
+- AUROC and AP use per-run peak detector scores from the fixed online model.
+- EBD is namespace coverage at the first alarm window.
+- Exposure at alarm **or end** uses final coverage for missed attacks, so missed runs cannot disappear from exposure summaries.
+- Detection delay is gateway-event elapsed time to the first alarm window. Misses are censored and counted; their delay is not replaced with zero.
+- Request count at alarm, precision, F1, confusion counts and known/unseen policy breakdowns supplement AUROC.
+- HTTP latency/throughput, transport errors, telemetry failures and detector CPU time per event describe operational cost.
 
-\[
-D_M^2(\\mathbf{x}) =
-(\\mathbf{x}-\\boldsymbol{\\mu}_0)^T
-\\boldsymbol{\\Sigma}_0^{-1}
-(\\mathbf{x}-\\boldsymbol{\\mu}_0).
-\]
+Namespace coverage counts unique observed resource keys over the known synthetic namespace. It is a proxy, not verified secret-state reconstruction. Delays exclude deployment action latency and the observational detector does not block requests. A low exposure number at small scale must be interpreted alongside miss counts.
 
-### Known-attack mixture
+Repeated cells report sample SD and Student-t intervals. Detection/FPR proportions use Wilson intervals. Precision/AP depend on the controlled class balance. Run-level independence is an experimental assumption; host/shared-service effects may reduce effective independence.
 
-Known reconnaissance regimes are modeled as a mixture of scenario-conditioned Gaussians:
+## Offline cross-validation
 
-\[
-p_1(\\mathbf{x}) =
-\\sum_k \\pi_k
-\\mathcal{N}(\\mathbf{x};\\boldsymbol{\\mu}_k,\\boldsymbol{\\Sigma}_k).
-\]
+Completed-run Gaussian baselines use leave-repeat-out, leave-scale-out and leave-attack-policy-out folds. Inside each outer training set, one benign repetition is reserved for calibration and excluded from fitting and fusion normalization.
 
-The supervised generative detector uses the log-likelihood ratio
+Leave-attack-policy-out holds out one attack regime and one benign test repetition; it never tests benign instances used in fitting. The remaining attack policies form the training attack mixture.
 
-\[
-\\Lambda(\\mathbf{x}) =
-\\log p_1(\\mathbf{x}) - \\log p_0(\\mathbf{x}).
-\]
+Fold scores from separately fitted models need not share a numeric scale. Macro-fold AUROC/AP are therefore primary; pooled metrics are retained as descriptive output. Offline folds use empirical upper calibration quantiles and record calibration resolution. They are smaller than the 299-stream online calibration and do not substantiate a 1% operating-point guarantee.
 
-This separates two questions: Gaussian OOD asks whether behavior is inconsistent with known benign traffic, while Gaussian LLR asks whether it is better explained by a known reconnaissance distribution.
+Gaussian diagnostics pool benign workloads and scales. Normality rejection may reflect this mixture, not a universal property of traffic. Constant features are flagged. Classical Mardia p-values assume independent observations and nonsingular covariance; ridge-stabilized, heterogeneous small samples require cautious interpretation.
 
-### Hybrid detector
+## Integrity and replay
 
-The previous transparent heuristic score is retained rather than replaced. The hybrid score fuses the standardized heuristic score and standardized Gaussian LLR:
+Every HTTP run checks expected request count, gateway telemetry failures, detector consumption and transport errors. Strict profiles fail rather than classify incomplete traces as successful measurements. Failed suites preserve an incomplete manifest and partial data.
 
-\[
-R_{hybrid}
-=
-w z(R_{heuristic})
-+
-(1-w) z(\\Lambda),
-\]
+Compressed raw gateway traces preserve the original Redis stream order. Replay loads the saved detector bundle and window configuration, resets state at each opaque run boundary and verifies peak scores, alarms, request counts and exposure against the recorded online results. Data can be streamed one run at a time.
 
-with \(w=0.5\) by default. Standardization parameters are estimated from benign training folds only.
+The HTML report contains predetermined repetition-0 curves, downsampled only for display. It retains links to every full trace and CSV. No representative run is selected based on favorable performance.
 
-### Cross-validation
+## Remaining limits
 
-Distributional results are reported with two leakage-resistant validation schemes:
-
-- **leave-repeat-out**: one experimental repetition is held out at a time;
-- **leave-scale-out**: one complete agent population size is held out at a time.
-
-The second test is intentionally difficult: a detector trained on other swarm sizes must generalize to an unseen population scale.
-
-For thresholded results, each training fold chooses its detector threshold from the upper benign score quantile corresponding to the configured \(\\alpha\). The default is \(\\alpha=0.01\). Thresholds are never fitted on the held-out fold.
-
-### Gaussian assumption checks
-
-A Gaussian model is a scientific baseline, not an assumption declared true by construction. The report therefore includes:
-
-- per-feature Shapiro-Wilk diagnostics after transformation;
-- Mardia multivariate skewness;
-- Mardia multivariate kurtosis.
-
-If these diagnostics reject normality, the Gaussian detector remains useful as an interpretable baseline, but richer density models should be compared in later experiments.
-
-### New output artifacts
-
-Every statistical-enabled report adds:
-
-- `distributional_scores.csv` — out-of-fold detector scores and thresholds;
-- `distributional_folds.csv` — fold-level AUROC, average precision, detection rate and FPR;
-- `distributional_summary.csv` — pooled and macro-fold metrics for each detector/validation scheme;
-- `gaussian_diagnostics.json` — univariate and multivariate normality diagnostics.
-
-Macro AUROC/AP are averaged across held-out folds because raw scores from independently fitted Gaussian models are not assumed to be perfectly calibrated across folds. This design avoids reporting an in-sample Gaussian fit as evidence of detection performance.
+One synthetic service, scripted policies and supplied trial boundaries do not provide external validity. Production authentication, adaptive learned attackers, multiple independently implemented services, continuous-stream segmentation, authenticated authorization context and active mitigation remain future experiments.

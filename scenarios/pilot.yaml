@@ -1,21 +1,24 @@
 name: pilot
-description: Fast repeated study for detector tuning and sanity checks.
+description: All methods and scenarios, including a genuine 1% calibration rank resolution.
 agent_counts: [10, 100, 1000]
-scenarios: [benign_flash, independent_recon, coordinated_swarm]
+scenarios: [benign_flash, benign_diagnostic, benign_explorer, benign_bulk, independent_recon, coordinated_swarm, swarm_no_diagnostic, matched_swarm, camouflaged_swarm, low_and_slow_swarm, mixed_swarm]
 repeats: 3
 requests_per_agent: 3
 concurrency: 128
-arrival_window_ms: 500
+arrival_window_ms: 250
 seed: 20261005
+attacker_fraction: 0.20
+camouflage_fraction: 0.50
+slow_delay_s: 0.05
+strict_telemetry: true
+save_event_traces: true
 baseline_identity_request_limit: 20
-detector:
-  threshold: 0.72
-  min_events: 30
-  consecutive_windows: 2
-  evaluation_interval: 100
+detector: {threshold: 0.72, min_events: 10, consecutive_windows: 2, evaluation_interval: 100}
+online: {enabled: true, window_events: 64, window_seconds: 1.0, min_window_events: 8, rff_dimensions: 64, mmd_history: 8}
+calibration: {source: http, training_repeats: 3, streams: 99, alpha: 0.01}
 statistical:
   enabled: true
   alpha: 0.01
-  shrinkage: 0.10
+  shrinkage: 0.15
   hybrid_weight: 0.50
-  validation_modes: [leave_repeat_out, leave_scale_out]
+  validation_modes: [leave_repeat_out, leave_scale_out, leave_attack_out]

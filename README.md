@@ -2,502 +2,182 @@
   <img src="docs/assets/swarm-recon-guard-logo.svg" alt="SwarmReconGuard" width="820">
 </p>
 
-<p align="center">
-  <strong>A reproducible black-box research framework for detecting distributed semantic reconnaissance by individually low-risk agent populations.</strong>
-</p>
-
+<p align="center"><strong>Detect collective reconnaissance when individual agents remain within ordinary request budgets.</strong></p>
 <p align="center">
   <a href="https://github.com/vtavakkoli/swarm-recon-guard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/vtavakkoli/swarm-recon-guard/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-  <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12%2B-3776AB.svg">
-  <img alt="Docker Compose" src="https://img.shields.io/badge/runtime-Docker%20Compose-2496ED.svg">
-  <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-0b5c74.svg">
+  <img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg">
+  <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-3776AB.svg">
+  <img alt="Version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-0f766e.svg">
 </p>
-
-<p align="center">
-  <strong>Vahid Tavakkoli</strong> ·
-  <strong>Kabeh Mohsenzadegan</strong> ·
-  <strong>Kyamakya Kyandoghere</strong>
-</p>
-
----
+<p align="center"><strong>Vahid Tavakkoli · Kabeh Mohsenzadegan · Kyamakya Kyandoghere</strong></p>
 
 ## Overview
 
-**SwarmReconGuard** studies a security problem that conventional per-client defenses can miss:
+**SwarmReconGuard** is a reproducible, Docker-isolated research benchmark for collective semantic reconnaissance. Many individually low-budget identities can explore a service cooperatively while leaving its availability intact. A defender therefore needs to measure population behavior, exposure before an alarm, legitimate-workload false alarms and service quality together.
 
-> What if every individual agent sends valid, low-rate, policy-compliant requests, but the population collectively reconstructs a service's observable state or discovers information weaknesses?
+The defender observes gateway telemetry only. It receives no policy label, attacker membership, coordination messages, prompts or agent memory. Version **0.3** adds online statistical, graph, kernel and sequential methods, independent reference calibration, harder traffic controls, raw-event replay and a comprehensive offline HTML report.
 
-The framework treats the defender as a **black-box boundary observer**. The detector sees service-side telemetry only. It does **not** see agent prompts, hidden coordination, internal memory, objectives, model activations, or true swarm membership.
+This is a controlled benchmark with scripted virtual identities. It does not claim that coordination proves malicious intent, that every virtual identity is an LLM agent, or that synthetic results establish production IDS performance.
 
-The central hypothesis is:
+## Run the comprehensive study
 
-[
-R(A_i) < 	au_i quad orall i
-]
-
-while the collective process can still produce:
-
-[
-R(A_1,ldots,A_N) > 	au
-]
-
-SwarmReconGuard therefore evaluates **collective behavior**, not only individual request rates.
-
-## Why this is different from DDoS
-
-A distributed reconnaissance swarm does not need to make a service unavailable. Availability can remain normal while the population systematically increases its knowledge of the service.
-
-The benchmark therefore separates three concerns:
-
-- **availability** — latency, throughput, errors, SLA impact;
-- **collective information acquisition** — semantic coverage and vulnerability discovery;
-- **detection quality** — heuristic, distributional, and hybrid detectors.
-
-The goal is not merely to classify traffic after the fact, but to eventually detect harmful collective exploration **before substantial information exposure**.
-
-## Key capabilities
-
-| Capability | Included |
-|---|---|
-| Docker-isolated synthetic service | Yes |
-| 10 / 100 / 1,000 / 10,000 virtual agents | Yes |
-| Matched-budget benign and reconnaissance scenarios | Yes |
-| Per-identity baseline detector | Yes |
-| Collective semantic-risk detector | Yes |
-| Gaussian out-of-distribution detector | Yes |
-| Gaussian likelihood-ratio detector | Yes |
-| Hybrid heuristic + statistical detector | Yes |
-| Leave-repeat-out validation | Yes |
-| Leave-scale-out validation | Yes |
-| Mean, SD, 95% CI, Wilson CI, Hedges' g | Yes |
-| Gaussian assumption diagnostics | Yes |
-| Self-contained HTML report | Yes |
-| CSV / JSONL publication artifacts | Yes |
-| Public Internet scanning | **No — intentionally blocked** |
-
-## Architecture
-
-```text
-                       hidden attacker side
-
-       virtual agents ───── optional coordination policy
-             │
-             │ ordinary low-rate HTTP GET requests
-             ▼
-╔════════════════════════ defender boundary ═══════════════════════╗
-║                                                                  ║
-║    ┌─────────┐        ┌────────────────────────────┐              ║
-║    │ gateway │ ─────► │ synthetic municipal API    │              ║
-║    └────┬────┘        └────────────────────────────┘              ║
-║         │                                                        ║
-║         ▼                                                        ║
-║   Redis telemetry                                                ║
-║         │                                                        ║
-║         ├────────► transparent collective-risk detector          ║
-║         │                                                        ║
-║         └────────► statistical / distributional analysis        ║
-║                                                                  ║
-╚══════════════════════════════════════════════════════════════════╝
-             │
-             ▼
-       experiment evaluator
-             │
-             ▼
- CSV · JSONL · statistics · HTML report
-```
-
-The defender observes gateway telemetry such as endpoint family, semantic resource key, response status, latency, body size, diagnostic access, and synthetic identity. Hidden swarm coordination remains outside the defender's view.
-
-## Experimental scenarios
-
-SwarmReconGuard v0.2 contains three controlled traffic regimes using matched per-agent request budgets.
-
-| Scenario | Coordination | Behavior |
-|---|---|---|
-| `benign_flash` | None | High-volume legitimate traffic with locality, repetition, and hot resources |
-| `independent_recon` | None | Independent exploratory agents sampling the full synthetic service namespace |
-| `coordinated_swarm` | Yes | Agents partition the namespace to reduce duplicate work and maximize collective coverage |
-
-The default publication-oriented matrix evaluates:
-
-[
-3	ext{ scenarios} 	imes 4	ext{ population sizes} 	imes 10	ext{ repeats}=120	ext{ runs}
-]
-
-with population sizes:
-
-[
-N in {10,100,1000,10000}.
-]
-
-> **Implementation note:** 10,000 agents means 10,000 distinct virtual identities and policy instances. They are executed as bounded asynchronous workers rather than 10,000 Docker containers.
-
-## Synthetic information weaknesses
-
-The target service contains only harmless, measurable benchmark channels:
-
-| ID | Synthetic weakness | Purpose |
-|---|---|---|
-| V001 | Sequential ticket enumeration | Measures systematic identifier-space exploration |
-| V002 | Permit prefix oracle | Measures population-wide aggregate probing |
-| V003 | Diagnostic metadata disclosure | Measures unnecessary information exposure |
-
-A successful experiment records discovery of these synthetic conditions. No shell execution, malware behavior, or host exploitation is included.
-
-## Detection stack
-
-### 1. Transparent collective-risk detector
-
-The original detector uses interpretable population-level features:
-
-- semantic novelty ratio;
-- normalized namespace span;
-- gap regularity;
-- diagnostic-access ratio;
-- endpoint-family entropy;
-- collective semantic coverage pressure.
-
-The baseline score is:
-
-[
-R_h =
-0.18N + 0.22S + 0.20G + 0.15D + 0.15H + 0.10C.
-]
-
-This detector is intentionally simple and auditable.
-
-### 2. Gaussian out-of-distribution detector
-
-A benign training fold is represented by a regularized multivariate Gaussian after logit-transforming bounded features:
-
-[
-H_0:mathbf{x}simmathcal{N}(oldsymbol{mu}_0,oldsymbol{Sigma}_0).
-]
-
-The anomaly score is squared Mahalanobis distance:
-
-[
-D_M^2(mathbf{x})=
-(mathbf{x}-oldsymbol{mu}_0)^T
-oldsymbol{Sigma}_0^{-1}
-(mathbf{x}-oldsymbol{mu}_0).
-]
-
-This answers:
-
-> Is the collective behavior statistically inconsistent with the learned benign distribution?
-
-### 3. Gaussian likelihood-ratio detector
-
-Known reconnaissance regimes are represented as a scenario-conditioned Gaussian mixture:
-
-[
-p_A(mathbf{x})=
-sum_k pi_k
-mathcal{N}(mathbf{x};oldsymbol{mu}_k,oldsymbol{Sigma}_k).
-]
-
-The score is:
-
-[
-Lambda(mathbf{x})=
-log p_A(mathbf{x})-log p_B(mathbf{x}).
-]
-
-This answers:
-
-> Is the observation better explained by a known reconnaissance distribution than by benign activity?
-
-### 4. Hybrid detector
-
-The statistical and transparent views are combined without discarding interpretability:
-
-[
-R_{hybrid}
-=
-w,z(R_h)+(1-w),z(Lambda),
-]
-
-with `w = 0.5` by default.
-
-All standardization and thresholds are estimated from training folds only.
-
-## Cross-validated evaluation
-
-The statistical layer is evaluated out-of-fold using two validation modes.
-
-### Leave-repeat-out
-
-One experimental repetition is held out at a time. This tests robustness to run-to-run variation.
-
-### Leave-scale-out
-
-One entire population size is held out:
-
-[
-N_{test}
-otin N_{train}.
-]
-
-For example:
-
-[
-N_{train}={10,100,1000},
-qquad
-N_{test}=10000.
-]
-
-This is intentionally difficult and tests generalization to an unseen swarm scale.
-
-The framework reports both fold-level and macro-averaged AUROC/AP so scores produced by independently fitted folds are not assumed to be perfectly calibrated across folds.
-
-## Gaussian assumption diagnostics
-
-SwarmReconGuard does **not** assume that benign traffic is truly Gaussian.
-
-Each report evaluates the approximation with:
-
-- Shapiro-Wilk tests for transformed individual features;
-- Mardia multivariate skewness;
-- Mardia multivariate kurtosis.
-
-If normality is rejected, the Gaussian model remains an interpretable statistical baseline rather than a claimed law of traffic behavior.
-
-## Core metrics
-
-The benchmark records both security and service outcomes.
-
-### Security
-
-- collective semantic coverage;
-- vulnerability discovery rate;
-- detector peak and final scores;
-- positive detection rate;
-- false-positive rate;
-- AUROC and average precision;
-- time-to-detection;
-- **Exposure Before Detection (EBD)**;
-- per-identity baseline trigger rate;
-- likelihood-ratio and OOD scores;
-- fold-level and macro cross-validation metrics.
-
-Exposure Before Detection is:
-
-[
-EBD=C(t_{alarm}),
-]
-
-where (C(t)) is the fraction of the synthetic observable state learned by time (t).
-
-### Service quality
-
-- request count and throughput;
-- p50 / p95 / p99 client latency;
-- HTTP status distribution;
-- transport error rate;
-- SLA delta relative to matched benign traffic.
-
-### Statistical reporting
-
-Repeated cells report:
-
-- arithmetic mean;
-- sample standard deviation;
-- two-sided 95% Student-(t) confidence interval;
-- Wilson confidence intervals for detection proportions;
-- Hedges' (g) effect size.
-
-## Quick start
-
-### Requirements
-
-- Docker Engine
-- Docker Compose v2
-- Git
-
-Clone:
+Requirements: Python 3.12+ for development; Docker Engine and a current Docker Compose v2 for the isolated benchmark.
 
 ```bash
 git clone https://github.com/vtavakkoli/swarm-recon-guard.git
 cd swarm-recon-guard
+docker compose run --rm experiment run --suite /app/scenarios/publication.yaml
 ```
 
-Run the CI-sized validation suite:
+Open the printed **results/publication-.../report.html** in a browser. It is self-contained: charts, tables and filters work without external scripts or an Internet connection. Keep the adjacent artifacts for download links and replay.
+
+The same command fits models, calibrates every alarm policy, runs the test matrix, verifies telemetry completeness and writes the report. Compose rebuilds the application images from the current source using its build policy. Existing unchanged layers are cached.
+
+**Publication workload:** 440 test runs and 3,666,300 test requests, plus 72 training streams and 299 independent benign calibration streams. All three phases use measured HTTP gateway telemetry. This is a substantial experiment; runtime depends on host capacity. Calibration may add several million requests. Fast profiles are available:
+
+| Profile | Test populations | Test repeats | Calibration | Purpose |
+|---|---|---:|---|---|
+| smoke.yaml | 10, 40 | 3 | 24 measured streams, alpha 10% | All methods and scenarios; CI integration |
+| pilot.yaml | 10, 100, 1,000 | 3 | 99 measured streams, alpha 1% | Smaller complete study |
+| publication.yaml | 10, 100, 1,000, 10,000 | 10 | 299 measured streams, alpha 1% | Full repeated study |
+| scale-ci.yaml | 10,000 | 1 | Policy references, alpha 10% | Capacity/integrity regression only |
 
 ```bash
-docker compose run --rm experiment run   --suite /app/scenarios/smoke.yaml
+docker compose run --rm experiment run --suite /app/scenarios/smoke.yaml
+docker compose run --rm experiment run --suite /app/scenarios/pilot.yaml
 ```
 
-Run the pilot suite:
+On Linux with a non-1000 UID, set SWARM_UID and SWARM_GID to your user/group IDs before running so the result bind mount is writable. Containers remain unprivileged. SWARM_COMMIT can record the checkout SHA in the manifest.
+
+## Detection methods
+
+Every online detector scores the same non-overlapping telemetry windows. An initial 16-event window permits small swarms to be assessed before their 30-request budget ends; subsequent publication windows contain up to 64 events, with a time limit and an explicitly scored terminal tail.
+
+| Method | Evidence | Role |
+|---|---|---|
+| heuristic | Novelty, namespace span, gap regularity, diagnostics, endpoint entropy, coverage pressure | Transparent window baseline |
+| gaussian_ood | Mahalanobis distance from an unconditional benign Gaussian | Original distributional baseline online |
+| gaussian_llr | Known-attack mixture / unconditional benign density | Supervised generative baseline |
+| conditional_ood | Closest benign workload component after context regression | Multiple benign regimes and load |
+| conditional_llr | Context-conditioned attack / benign mixture likelihood ratio | Load-aware supervised evidence |
+| graph | Temporal identity/resource-region bipartite graph descriptors | Collective organization and complementary exploration |
+| kernel_mmd | Gaussian-kernel approximation with fixed random Fourier features | Non-Gaussian distributional comparison |
+| hybrid | Standardized heuristic + conditional LLR + graph evidence | Interpretable fusion |
+| cusum | Sequential conditional log-likelihood accumulation | Early change detection |
+| hybrid_cusum | Sequential fused evidence with drift allowance | Joint sequential detector |
+
+Three independently calibrated component ablations remove graph, LLR or heuristic evidence from the pointwise hybrid. The legacy cumulative heuristic is retained and reported separately.
+
+The graph detector is a statistical model of interpretable graph descriptors, not a graph neural network. It measures cross-identity reuse, resource-region balance and entropy, identity specialization, temporal namespace progression and connected-component fraction. Cumulative novelty, coverage and reuse counters preserve evidence across window boundaries. In a partitioning swarm, **unexpectedly little duplicated work** can be more informative than shared-resource overlap.
+
+The kernel method approximates MMD over recent context residuals. It is not a claim of an exact permutation-test p-value. All models and fusion normalization are fitted on training streams; each complete alarm policy is calibrated on separate benign streams.
+
+## Independent training, calibration and testing
+
+1. **Training:** measured benign controls and the two known reconnaissance policies fit densities, context regression, graph models, kernel parameters and fusion normalization.
+2. **Calibration:** independent benign HTTP streams set thresholds from each detector's maximum over the complete stream, including CUSUM and MMD history.
+3. **Testing:** a separate seeded matrix measures performance. Its labels and attacker membership never enter prediction.
+
+Training/calibration seeds are derived with phase-specific SHA-256 namespaces. Reference sources, seeds and windows are saved. Online test traffic is never used to select its own thresholds.
+
+For n calibration streams, the upper rank is ceil((n + 1) * (1 - alpha)). If this exceeds n, the threshold is infinite and the report states that there is insufficient calibration resolution. Rank validity requires exchangeability and comparable monitoring horizons; a nominal 1% target does not certify production or every-scale FPR.
+
+Completed-run Gaussian baselines also have separate **leave-repeat-out**, **leave-scale-out** and **leave-attack-policy-out** evaluation. An inner benign repetition is held out for threshold calibration and excluded from model fitting. These smaller folds are not sufficient evidence for a 1% false-alarm claim; the report makes this distinction explicit.
+
+## Traffic controls
+
+Every identity receives the same request budget.
+
+| Scenario | Label | Purpose |
+|---|---|---|
+| benign_flash | Benign | Locality, hot resources and repetition |
+| benign_diagnostic | Benign | Legitimate diagnostic access; removes a convenient exclusive attack cue |
+| benign_explorer | Benign | Independent broad exploration with low diagnostic probability |
+| benign_bulk | Benign | Legitimate broad, repetitive batch workflow; hard negative |
+| independent_recon | Attack | Independent uniform reconnaissance; known training policy |
+| coordinated_swarm | Attack | Randomized stratified partitioning; known training policy |
+| swarm_no_diagnostic | Attack | Coordinated exploration without diagnostic access |
+| matched_swarm | Attack | Approximately matched individual resource marginals; coordinated collective sampling |
+| camouflaged_swarm | Attack | Blends hot-resource requests with coordinated exploration |
+| low_and_slow_swarm | Attack | Adds seeded per-request delays |
+| mixed_swarm | Attack | Hidden 20% attacker subset embedded in benign traffic |
+
+Different resource families use independent seeded permutations and within-stratum jitter. Repeats vary actual actions, not just arrival timing. Matched marginals are a controlled approximate construction, not a proof that every complete individual joint distribution is identical.
+
+The detector sees the whole trial stream in mixed tests. Membership is evaluator-only. Trial boundaries are supplied by the lab; segmentation of a permanently running production stream remains future work.
+
+## What the report contains
+
+- Online AUROC/AP, precision, F1, confusion counts, detection and false-positive rates with 95% Wilson intervals.
+- Results by population, benign workload, attack policy and known/unseen policy group.
+- Exposure before detection, exposure at alarm **or run end**, missed-attack counts and delay among detected attacks.
+- Interactive score/threshold trajectories from predetermined repetition 0.
+- Three component ablations with their own calibrated thresholds.
+- Offline macro-fold metrics, effect sizes and Gaussian assumption diagnostics.
+- HTTP p50/p95/p99, throughput, transport errors, matched benign SLA deltas and detector processing cost.
+- Calibration resolution, horizon checks, trace completeness, host metadata, limitations and an executive summary.
+
+Namespace coverage is a proxy for information acquisition. It is not a verified percentage of recovered secrets. Alarms are observational and do not block requests; SLA deltas measure traffic effects, not mitigation benefits.
+
+## Artifacts and replay
+
+| Artifact | Contents |
+|---|---|
+| report.html / executive_summary.md | Self-contained visual report / concise findings |
+| manifest.json / integrity.json / limitations.json | Configuration, provenance, completeness and interpretation |
+| online_summary.csv / online_scores.csv | Per-method aggregate / per-run online outcomes |
+| online_by_scale.csv / online_by_scenario.csv | Population and workload breakdowns |
+| online_generalization.csv / ablation_summary.csv | Unseen policy evaluation / component removal |
+| window_traces.jsonl / event_traces.jsonl.gz | Every test window / compressed raw gateway events |
+| detector_bundle.json / calibration.json | Exact fitted model / independent threshold evidence |
+| reference_manifest.jsonl / reference_windows.jsonl | Disjoint reference seeds and model inputs |
+| reference_events.jsonl.gz / reference_http_metrics.csv | Measured HTTP reference telemetry and service metrics |
+| raw_metrics.csv / summary.csv / service_metrics.csv | Run data / repeated-cell intervals / service cost |
+| distributional_*.csv / gaussian_diagnostics.json | Offline cross-validation and distribution diagnostics |
+| effect_sizes.csv / classification*.json,csv | Effect sizes and legacy cumulative baseline |
+
+Replay verifies every saved online peak score, alarm decision, request count and exposure without making HTTP requests:
 
 ```bash
-docker compose run --rm experiment run   --suite /app/scenarios/pilot.yaml
+docker compose run --rm experiment replay --run-dir /app/results/<experiment-folder>
+docker compose run --rm experiment report --run-dir /app/results/<experiment-folder>
 ```
 
-Run the full publication-oriented matrix:
+Replay writes replay_checks.csv and fails if decisions differ. Report regeneration uses the saved test outcomes, calibration and windows; it does not silently refit the online model.
+
+## Custom studies
 
 ```bash
-docker compose run --rm experiment run   --suite /app/scenarios/publication.yaml
+docker compose run --rm experiment generate \
+  --output /app/results/custom-suite.yaml \
+  --agents 10,100,1000,10000 --repeats 10 \
+  --requests-per-agent 3 --alpha 0.01
+docker compose run --rm experiment run --suite /app/results/custom-suite.yaml
 ```
 
-## Generate a custom experiment
+Reference calibration defaults to HTTP. A calibration source of policy explicitly selects simulated semantic metadata for faster development. The report records this choice and does not present simulated references as measured service traffic.
 
-```bash
-docker compose run --rm experiment generate   --output /app/results/custom-suite.yaml   --agents 10,100,1000,10000   --scenarios benign_flash,independent_recon,coordinated_swarm   --repeats 10   --requests-per-agent 3   --concurrency 512   --seed 20261005   --alpha 0.01   --shrinkage 0.10   --hybrid-weight 0.50
-```
+## Safety and implementation
 
-Then run it:
+The target is a synthetic municipal-style API with ticket enumeration, a prefix-count oracle and diagnostic disclosure. It has no shell execution path or real secrets. The Docker network is internal, no target port is published, capabilities are dropped and arbitrary gateway/detector hosts are rejected.
 
-```bash
-docker compose run --rm experiment run   --suite /app/results/custom-suite.yaml
-```
+Ten thousand agents means ten thousand virtual identities executed by bounded asynchronous workers, not ten thousand containers. Identity headers are lab signals, not an implemented authentication mechanism. The per-identity baseline is a run-budget count rule, not a comprehensive production rate limiter.
 
-## Rebuild a report from an existing experiment
-
-```bash
-docker compose run --rm experiment report   --run-dir /app/results/<experiment-folder>
-```
-
-This is useful when analysis or report-generation logic changes but the underlying experiment traces do not need to be regenerated.
-
-## Result artifacts
-
-Each run suite creates:
-
-```text
-results/<suite>-<timestamp>/
-├── manifest.json
-├── runs.jsonl
-├── raw_metrics.csv
-├── summary.csv
-├── classification.json
-├── classification_by_agents.csv
-├── effect_sizes.csv
-├── distributional_scores.csv
-├── distributional_folds.csv
-├── distributional_summary.csv
-├── gaussian_diagnostics.json
-└── report.html
-```
-
-`report.html` is self-contained and can be opened locally without an external dashboard.
-
-## Reproducibility profiles
-
-| Suite | Agents | Repeats | Intended use |
-|---|---:|---:|---|
-| `smoke.yaml` | 10, 30 | 3 | CI and statistical sanity check |
-| `pilot.yaml` | 10, 100, 1,000 | 3 | Fast local evaluation |
-| `publication.yaml` | 10, 100, 1,000, 10,000 | 10 | Repeated publication-oriented study |
-
-For manuscript experiments, record host hardware, operating system, Docker version, available CPU/memory, and background workload because absolute throughput and latency are host dependent.
-
-## Safety boundary
-
-SwarmReconGuard is intentionally constrained to its synthetic Docker environment.
-
-The default deployment:
-
-- uses an `internal: true` Docker network;
-- exposes no target service port to the public Internet;
-- does not mount the Docker socket;
-- does not mount host credentials;
-- drops Linux capabilities;
-- uses `no-new-privileges`;
-- rejects arbitrary non-lab gateway hosts in the experiment runner.
-
-The project is a research benchmark, **not** a general-purpose vulnerability scanner.
-
-See [SECURITY.md](SECURITY.md) and [docs/threat-model.md](docs/threat-model.md).
-
-## Repository structure
-
-```text
-swarm-recon-guard/
-├── docker-compose.yml
-├── scenarios/
-│   ├── smoke.yaml
-│   ├── pilot.yaml
-│   └── publication.yaml
-├── src/swarmguard/
-│   ├── target/        # synthetic municipal-style service
-│   ├── gateway/       # defender-visible telemetry boundary
-│   ├── detector/      # online collective-risk detector
-│   ├── experiment/    # virtual agents and experiment runner
-│   └── reporting/     # statistics, distributional models, HTML report
-├── docs/
-│   ├── assets/
-│   ├── methodology.md
-│   └── threat-model.md
-├── tests/
-└── results/
-```
-
-## Research roadmap
-
-The current framework is a controlled baseline. Natural extensions include:
-
-- scale-conditioned benign distributions;
-- benign Gaussian mixtures and non-parametric density estimators;
-- temporal CUSUM / sequential likelihood accumulation;
-- camouflaged and low-and-slow swarms;
-- adaptive evasion policies;
-- gossip and blackboard coordination topologies;
-- service-capacity-aware security experiments;
-- multiple independently implemented synthetic services;
-- constrained LLM/planner agents;
-- temporal interaction-graph detectors;
-- detector ablation and threshold-sensitivity studies.
-
-A central future objective is to achieve high detection while simultaneously minimizing:
-
-[
-EBD,quad FPR,quad Delta SLA.
-]
+See [Threat model](docs/threat-model.md), [Methodology](docs/methodology.md) and [SECURITY.md](SECURITY.md).
 
 ## Development
-
-Install locally:
 
 ```bash
 python -m pip install -e '.[dev]'
 pytest
 ```
 
-Or run:
+CI runs regression tests, every method/scenario in Docker, raw-event replay and a 10,000-identity capacity test. It uploads result artifacts for inspection.
 
-```bash
-make test
-make smoke
-```
+The methods build on [Page's sequential inspection work](https://doi.org/10.1093/biomet/41.1-2.100), [kernel two-sample testing](https://jmlr.org/papers/v13/gretton12a.html), and [temporal multiplex coordination research](https://doi.org/10.1609/icwsm.v20i1.42682). Their adaptation to this benchmark is an experimentally testable proposal.
 
-CI executes both unit tests and a Docker Compose end-to-end smoke experiment.
+## Authors, citation and license
 
-## Methodology
+**Vahid Tavakkoli · Kabeh Mohsenzadegan · Kyamakya Kyandoghere**
 
-For the full experimental and statistical specification, see:
-
-- [Methodology](docs/methodology.md)
-- [Threat model](docs/threat-model.md)
-
-## Authors
-
-- **Vahid Tavakkoli**
-- **Kabeh Mohsenzadegan**
-- **Kyamakya Kyandoghere**
-
-## Citation
-
-If you use SwarmReconGuard in academic work, please cite the software metadata in [CITATION.cff](CITATION.cff). A publication citation can be added once a manuscript is publicly available.
-
-## License
-
-Licensed under the [Apache License 2.0](LICENSE).
-
----
-
-<p align="center">
-  <strong>SwarmReconGuard</strong><br>
-  Detect collective reconnaissance even when individual agents remain in the green zone.
-</p>
+Use [CITATION.cff](CITATION.cff) for software attribution. Licensed under [Apache-2.0](LICENSE).
