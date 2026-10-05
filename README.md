@@ -73,6 +73,12 @@ manifest.json
 runs.jsonl
 raw_metrics.csv
 summary.csv
+classification.json
+classification_by_agents.csv
+effect_sizes.csv
+distributional_scores.csv
+distributional_summary.csv
+gaussian_diagnostics.json
 report.html
 ```
 
@@ -119,7 +125,7 @@ The detector is intentionally evaluated without access to agent internals. See [
 
 | Suite | Agents | Repeats | Purpose |
 |---|---:|---:|---|
-| `smoke.yaml` | 10, 30 | 1 | CI / sanity check |
+| `smoke.yaml` | 10, 30 | 3 | CI / statistical sanity check |
 | `pilot.yaml` | 10, 100, 1,000 | 3 | fast local study |
 | `publication.yaml` | 10, 100, 1,000, 10,000 | 10 | paper-quality repeated matrix |
 
