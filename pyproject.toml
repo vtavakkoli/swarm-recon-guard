@@ -9,7 +9,11 @@ description = "Docker-isolated benchmark for detecting distributed agentic recon
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
-authors = [{name = "Vahid Tavakkoli"}]
+authors = [
+  {name = "Vahid Tavakkoli"},
+  {name = "Kabeh Mohsenzadegan"},
+  {name = "Kyamakya Kyandoghere"},
+]
 dependencies = [
   "fastapi>=0.115,<1",
   "uvicorn[standard]>=0.32,<1",
