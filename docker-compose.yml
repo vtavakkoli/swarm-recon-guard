@@ -2,6 +2,7 @@ name: swarm-recon-guard
 
 x-common: &common
   build: .
+  pull_policy: build
   networks: [labnet]
   restart: "no"
   read_only: true
@@ -63,6 +64,8 @@ services:
     environment:
       REDIS_URL: "redis://redis:6379/0"
       DETECTOR_STREAM: "swarmguard:events"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
     depends_on:
       redis:
         condition: service_healthy
@@ -80,6 +83,9 @@ services:
       GATEWAY_URL: "http://gateway:8080"
       DETECTOR_URL: "http://detector:8090"
       RESULT_ROOT: "/app/results"
+      SWARM_COMMIT: "${SWARM_COMMIT:-not supplied}"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
     volumes:
       - ./results:/app/results
       - ./scenarios:/app/scenarios:ro
