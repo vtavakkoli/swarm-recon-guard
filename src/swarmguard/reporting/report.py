@@ -4,6 +4,7 @@ import csv, html, json, math
 from collections import defaultdict
 from pathlib import Path
 from swarmguard.reporting.stats import auroc, average_precision, describe, hedges_g, wilson_interval
+from swarmguard.reporting.distributional import evaluate_distributional
 
 METRICS=("detected","detector_score_peak","detection_delay_ms","exposure_before_detection","semantic_coverage","vulnerability_discovery_rate","requests_per_second","latency_p95_ms","latency_p99_ms","transport_error_rate","sla_p95_delta_pct","throughput_delta_pct","per_identity_rule_triggered")
 
@@ -27,6 +28,18 @@ def build_report(runs:list[dict[str,object]], manifest:dict[str,object], out:Pat
             bp95=float(b["latency_p95_ms"]); brps=float(b["requests_per_second"])
             r["sla_p95_delta_pct"]=100*(float(r["latency_p95_ms"])-bp95)/bp95 if bp95 else 0.0
             r["throughput_delta_pct"]=100*(float(r["requests_per_second"])-brps)/brps if brps else 0.0
+    stat_cfg=manifest.get("suite",{}).get("statistical",{}) if isinstance(manifest.get("suite",{}),dict) else {}
+    distributional={"summary":[],"diagnostics":{}}
+    if stat_cfg.get("enabled",True):
+        distributional=evaluate_distributional(
+            runs,
+            out,
+            alpha=float(stat_cfg.get("alpha",0.01)),
+            shrinkage=float(stat_cfg.get("shrinkage",0.10)),
+            hybrid_weight=float(stat_cfg.get("hybrid_weight",0.50)),
+            validation_modes=tuple(stat_cfg.get("validation_modes",["leave_repeat_out","leave_scale_out"])),
+        )
+
     fields=sorted({k for r in runs for k in r})
     with (out/"raw_metrics.csv").open("w",newline="",encoding="utf-8") as f:
         w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(runs)
