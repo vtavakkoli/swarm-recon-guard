@@ -23,6 +23,8 @@ camouflage_fraction: 0.50
 slow_delay_s: 0.20
 baseline_identity_request_limit: 20
 strict_telemetry: true
+transport_retries: 3
+transport_retry_backoff_ms: 50
 telemetry_drain_timeout_s: 120
 save_event_traces: true
 detector:

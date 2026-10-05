@@ -20,7 +20,7 @@ def generate(output: Path = typer.Option(...), agents: str = "10,100,1000,10000"
     invalid=sorted(set(names)-set(SCENARIOS))
     if invalid: raise typer.BadParameter(f"unknown scenarios: {invalid}")
     data={"name":output.stem,"agent_counts":[int(x) for x in agents.split(",")],"scenarios":names,"repeats":repeats,"requests_per_agent":requests_per_agent,"concurrency":concurrency,"arrival_window_ms":1000,"seed":seed,"baseline_identity_request_limit":20,
-          "strict_telemetry":True,"save_event_traces":True,
+          "strict_telemetry":True,"transport_retries":3,"transport_retry_backoff_ms":50,"save_event_traces":True,
           "detector":{"threshold":0.72,"min_events":10,"consecutive_windows":2,"evaluation_interval":100},
           "online":{"enabled":True,"window_events":64,"window_seconds":1.0,"min_window_events":8,"shrinkage":shrinkage},
           "calibration":{"training_repeats":3,"streams":max(99,int(3/alpha)),"alpha":alpha},

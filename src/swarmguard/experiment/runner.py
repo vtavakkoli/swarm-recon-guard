@@ -114,6 +114,36 @@ async def _wait_ready(client: httpx.AsyncClient, url: str, timeout_s: float = 30
     raise RuntimeError(f"service did not become ready: {url}")
 
 
+async def _request_with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict[str, str],
+    headers: dict[str, str],
+    retries: int,
+    backoff_ms: float,
+) -> tuple[httpx.Response | None, int]:
+    """Send one logical lab request with bounded retries.
+
+    Retries reuse X-Lab-Request-Id. The gateway deduplicates a retry that
+    arrives after the original request was already completed, so telemetry
+    remains exactly-once for the logical request.
+    """
+    retry_count = 0
+    for attempt in range(retries + 1):
+        try:
+            response = await client.get(url, params=params, headers=headers)
+            if response.status_code not in {502, 503, 504}:
+                return response, retry_count
+        except httpx.TransportError:
+            response = None
+        if attempt >= retries:
+            return None, retry_count
+        retry_count += 1
+        await asyncio.sleep((backoff_ms / 1000.0) * (2 ** attempt))
+    return None, retry_count
+
+
 async def _run_one(**kwargs) -> dict[str, object]:
     run_id = "run-" + uuid.uuid4().hex
     try:
@@ -136,6 +166,8 @@ async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.Asyn
     arrival_window_ms = float(suite.get("arrival_window_ms", 1000))
     seed = int(suite.get("seed", 20261005))
     detector_cfg = suite.get("detector", {})
+    transport_retries = int(suite.get("transport_retries", 3))
+    transport_retry_backoff_ms = float(suite.get("transport_retry_backoff_ms", 50.0))
     reset = await detector_client.post(f"{detector_url}/runs/{run_id}/reset", json={
         "threshold": float(detector_cfg.get("threshold", 0.72)),
         "min_events": int(detector_cfg.get("min_events", 10)),
@@ -149,6 +181,8 @@ async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.Asyn
     latencies_ms: list[float] = []
     statuses: list[int] = []
     per_agent_counts = [0] * agent_count
+    transport_retries_used = 0
+    transport_retries_exhausted = 0
     is_attack = scenario not in BENIGN_SCENARIOS
     members = attack_members(agent_count, float(suite.get("attacker_fraction", 0.20)), seed, repeat) if scenario == "mixed_swarm" else frozenset(range(agent_count)) if is_attack else frozenset()
     coordinated = is_attack and scenario != "independent_recon"
@@ -166,17 +200,32 @@ async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.Asyn
             camouflage_fraction=float(suite.get("camouflage_fraction", 0.50)),
             slow_delay_s=float(suite.get("slow_delay_s", 0.20)),
         )
-        for action in actions:
+        nonlocal transport_retries_used, transport_retries_exhausted
+        for action_index, action in enumerate(actions):
             if action.delay_s:
                 await asyncio.sleep(action.delay_s)
             async with semaphore:
                 t0 = time.perf_counter()
-                try:
-                    response = await client.get(
-                        f"{gateway_url}{action.path}", params=action.params,
-                        headers={"X-Run-Id": run_id, "X-Lab-Identity": identity},
-                    )
-                    elapsed = (time.perf_counter() - t0) * 1000
+                request_id = f"{run_id}:{agent_idx}:{action_index}"
+                response, retries_used = await _request_with_retries(
+                    client,
+                    f"{gateway_url}{action.path}",
+                    params=action.params,
+                    headers={
+                        "X-Run-Id": run_id,
+                        "X-Lab-Identity": identity,
+                        "X-Lab-Request-Id": request_id,
+                    },
+                    retries=transport_retries,
+                    backoff_ms=transport_retry_backoff_ms,
+                )
+                transport_retries_used += retries_used
+                elapsed = (time.perf_counter() - t0) * 1000
+                if response is None:
+                    transport_retries_exhausted += 1
+                    statuses.append(599)
+                    latencies_ms.append(elapsed)
+                else:
                     try:
                         payload = response.json()
                     except ValueError:
@@ -188,9 +237,6 @@ async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.Asyn
                         shared_findings.observe(*args)
                     statuses.append(response.status_code)
                     latencies_ms.append(elapsed)
-                except httpx.HTTPError:
-                    statuses.append(599)
-                    latencies_ms.append((time.perf_counter() - t0) * 1000)
                 per_agent_counts[agent_idx] += 1
         individual_flags[agent_idx] = local.discovered()
 
@@ -216,7 +262,13 @@ async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.Asyn
     telemetry_response.raise_for_status()
     telemetry = telemetry_response.json()
     observed = int(snapshot.get("telemetry_processed", snapshot.get("requests", 0)))
-    valid = observed == expected and not snapshot.get("detector_error") and telemetry["telemetry_failures"] == 0 and 599 not in statuses
+    valid = (
+        observed == expected
+        and int(telemetry.get("forwarded_requests", 0)) == expected
+        and not snapshot.get("detector_error")
+        and telemetry["telemetry_failures"] == 0
+        and 599 not in statuses
+    )
     if suite.get("strict_telemetry", True) and not valid:
         raise RuntimeError(f"Incomplete measurement: expected={expected} processed={observed} telemetry={telemetry} transport_errors={statuses.count(599)}")
 
@@ -266,6 +318,8 @@ async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.Asyn
         "unique_resources": int(snapshot.get("unique_resources", 0)),
         **{name: float(snapshot.get(name, 0)) for name in ("novelty_ratio", "namespace_span", "gap_uniformity", "diagnostic_ratio", "family_entropy")},
         "measurement_valid": valid, "telemetry_processed": observed, "telemetry_failures": telemetry["telemetry_failures"],
+        "transport_retries_used": transport_retries_used, "transport_retries_exhausted": transport_retries_exhausted,
+        "deduplicated_retries": int(telemetry.get("deduplicated_retries", 0)),
         "online": online, "started_at_utc": datetime.fromtimestamp(start_wall, tz=timezone.utc).isoformat(),
     }
     if capture_reference:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -12,11 +13,17 @@ from fastapi import FastAPI, Request, Response
 TARGET_BASE_URL = os.getenv("TARGET_BASE_URL", "http://target:8000").rstrip("/")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 STREAM = os.getenv("DETECTOR_STREAM", "swarmguard:events")
+UPSTREAM_TIMEOUT_S = float(os.getenv("GATEWAY_UPSTREAM_TIMEOUT_S", "120"))
+UPSTREAM_MAX_CONNECTIONS = int(os.getenv("GATEWAY_MAX_CONNECTIONS", "512"))
+UPSTREAM_MAX_KEEPALIVE = int(os.getenv("GATEWAY_MAX_KEEPALIVE", "256"))
 
 client: httpx.AsyncClient | None = None
 redis_client: redis.Redis | None = None
 telemetry_failures: dict[str, int] = {}
 forwarded_requests: dict[str, int] = {}
+deduplicated_retries: dict[str, int] = {}
+response_cache: dict[str, dict[str, tuple[int, bytes, str]]] = {}
+request_locks: dict[str, dict[str, asyncio.Lock]] = {}
 
 
 def _semantic_metadata(path: str, query: dict[str, str]) -> tuple[str, str, int | None]:
@@ -39,7 +46,15 @@ def _semantic_metadata(path: str, query: dict[str, str]) -> tuple[str, str, int 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global client, redis_client
-    client = httpx.AsyncClient(base_url=TARGET_BASE_URL, timeout=10.0, trust_env=False)
+    client = httpx.AsyncClient(
+        base_url=TARGET_BASE_URL,
+        timeout=httpx.Timeout(UPSTREAM_TIMEOUT_S),
+        limits=httpx.Limits(
+            max_connections=UPSTREAM_MAX_CONNECTIONS,
+            max_keepalive_connections=UPSTREAM_MAX_KEEPALIVE,
+        ),
+        trust_env=False,
+    )
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     yield
     await client.aclose()
@@ -56,14 +71,20 @@ async def healthz() -> dict[str, str]:
 
 @app.get("/_lab/telemetry/{run_id}")
 async def telemetry_status(run_id: str) -> dict:
-    return {"forwarded_requests": forwarded_requests.get(run_id, 0),
-            "telemetry_failures": telemetry_failures.get(run_id, 0)}
+    return {
+        "forwarded_requests": forwarded_requests.get(run_id, 0),
+        "deduplicated_retries": deduplicated_retries.get(run_id, 0),
+        "telemetry_failures": telemetry_failures.get(run_id, 0),
+    }
 
 
 @app.delete("/_lab/telemetry/{run_id}")
 async def release_telemetry(run_id: str) -> dict:
     telemetry_failures.pop(run_id, None)
     forwarded_requests.pop(run_id, None)
+    deduplicated_retries.pop(run_id, None)
+    response_cache.pop(run_id, None)
+    request_locks.pop(run_id, None)
     return {"status": "released"}
 
 
@@ -76,12 +97,39 @@ async def proxy(path: str, request: Request) -> Response:
 
     run_id = request.headers.get("x-run-id", "unassigned")
     identity = request.headers.get("x-lab-identity", "anonymous")
+    request_id = request.headers.get("x-lab-request-id")
+    request_lock: asyncio.Lock | None = None
+    if request_id:
+        cached = response_cache.get(run_id, {}).get(request_id)
+        if cached is not None:
+            deduplicated_retries[run_id] = deduplicated_retries.get(run_id, 0) + 1
+            status_code, content, content_type = cached
+            return Response(content=content, status_code=status_code, headers={"content-type": content_type})
+        request_lock = request_locks.setdefault(run_id, {}).setdefault(request_id, asyncio.Lock())
+        await request_lock.acquire()
+        # A prior attempt may have completed while this retry waited.
+        cached = response_cache.get(run_id, {}).get(request_id)
+        if cached is not None:
+            deduplicated_retries[run_id] = deduplicated_retries.get(run_id, 0) + 1
+            request_lock.release()
+            status_code, content, content_type = cached
+            return Response(content=content, status_code=status_code, headers={"content-type": content_type})
     query_items = list(request.query_params.multi_items())
     query_dict = dict(query_items)
     query_string = urlencode(query_items)
 
     start = time.perf_counter()
-    upstream = await client.get(f"/{path}", params=query_items)
+    try:
+        upstream = await client.get(f"/{path}", params=query_items)
+    except httpx.HTTPError:
+        if request_lock is not None and request_lock.locked():
+            request_lock.release()
+        return Response(
+            content='{"detail":"synthetic upstream temporarily unavailable"}',
+            status_code=503,
+            media_type="application/json",
+            headers={"retry-after": "0"},
+        )
     forwarded_requests[run_id] = forwarded_requests.get(run_id, 0) + 1
     latency_ms = (time.perf_counter() - start) * 1000.0
 
@@ -106,5 +154,14 @@ async def proxy(path: str, request: Request) -> Response:
     except Exception:
         telemetry_failures[run_id] = telemetry_failures.get(run_id, 0) + 1
 
-    headers = {"content-type": upstream.headers.get("content-type", "application/json")}
+    content_type = upstream.headers.get("content-type", "application/json")
+    if request_id:
+        response_cache.setdefault(run_id, {})[request_id] = (
+            upstream.status_code,
+            bytes(upstream.content),
+            content_type,
+        )
+    if request_lock is not None and request_lock.locked():
+        request_lock.release()
+    headers = {"content-type": content_type}
     return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)

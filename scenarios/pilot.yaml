@@ -11,6 +11,8 @@ attacker_fraction: 0.20
 camouflage_fraction: 0.50
 slow_delay_s: 0.05
 strict_telemetry: true
+transport_retries: 3
+transport_retry_backoff_ms: 50
 save_event_traces: true
 baseline_identity_request_limit: 20
 detector: {threshold: 0.72, min_events: 10, consecutive_windows: 2, evaluation_interval: 100}

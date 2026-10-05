@@ -18,7 +18,8 @@ METRICS = (
     "semantic_coverage", "vulnerability_discovery_rate", "requests_per_second", "latency_p95_ms",
     "latency_p99_ms", "transport_error_rate", "sla_p95_delta_pct", "throughput_delta_pct",
     "per_identity_rule_triggered", "attacker_semantic_coverage", "information_bytes_received",
-    "measurement_valid", "telemetry_failures",
+    "measurement_valid", "telemetry_failures", "transport_retries_used",
+    "transport_retries_exhausted", "deduplicated_retries",
 )
 
 METHOD_DESCRIPTIONS = {
