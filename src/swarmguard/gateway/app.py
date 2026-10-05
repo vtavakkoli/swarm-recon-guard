@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -22,6 +23,7 @@ telemetry_failures: dict[str, int] = {}
 forwarded_requests: dict[str, int] = {}
 deduplicated_retries: dict[str, int] = {}
 response_cache: dict[str, dict[str, tuple[int, bytes, str]]] = {}
+request_locks: dict[str, dict[str, asyncio.Lock]] = {}
 
 
 def _semantic_metadata(path: str, query: dict[str, str]) -> tuple[str, str, int | None]:
@@ -82,6 +84,7 @@ async def release_telemetry(run_id: str) -> dict:
     forwarded_requests.pop(run_id, None)
     deduplicated_retries.pop(run_id, None)
     response_cache.pop(run_id, None)
+    request_locks.pop(run_id, None)
     return {"status": "released"}
 
 
@@ -95,10 +98,20 @@ async def proxy(path: str, request: Request) -> Response:
     run_id = request.headers.get("x-run-id", "unassigned")
     identity = request.headers.get("x-lab-identity", "anonymous")
     request_id = request.headers.get("x-lab-request-id")
+    request_lock: asyncio.Lock | None = None
     if request_id:
         cached = response_cache.get(run_id, {}).get(request_id)
         if cached is not None:
             deduplicated_retries[run_id] = deduplicated_retries.get(run_id, 0) + 1
+            status_code, content, content_type = cached
+            return Response(content=content, status_code=status_code, headers={"content-type": content_type})
+        request_lock = request_locks.setdefault(run_id, {}).setdefault(request_id, asyncio.Lock())
+        await request_lock.acquire()
+        # A prior attempt may have completed while this retry waited.
+        cached = response_cache.get(run_id, {}).get(request_id)
+        if cached is not None:
+            deduplicated_retries[run_id] = deduplicated_retries.get(run_id, 0) + 1
+            request_lock.release()
             status_code, content, content_type = cached
             return Response(content=content, status_code=status_code, headers={"content-type": content_type})
     query_items = list(request.query_params.multi_items())
@@ -109,6 +122,8 @@ async def proxy(path: str, request: Request) -> Response:
     try:
         upstream = await client.get(f"/{path}", params=query_items)
     except httpx.HTTPError:
+        if request_lock is not None and request_lock.locked():
+            request_lock.release()
         return Response(
             content='{"detail":"synthetic upstream temporarily unavailable"}',
             status_code=503,
@@ -146,5 +161,7 @@ async def proxy(path: str, request: Request) -> Response:
             bytes(upstream.content),
             content_type,
         )
+    if request_lock is not None and request_lock.locked():
+        request_lock.release()
     headers = {"content-type": content_type}
     return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)
