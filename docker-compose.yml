@@ -47,6 +47,9 @@ services:
     environment:
       TARGET_BASE_URL: "http://target:8000"
       REDIS_URL: "redis://redis:6379/0"
+      GATEWAY_UPSTREAM_TIMEOUT_S: "120"
+      GATEWAY_MAX_CONNECTIONS: "512"
+      GATEWAY_MAX_KEEPALIVE: "256"
     depends_on:
       redis:
         condition: service_healthy
