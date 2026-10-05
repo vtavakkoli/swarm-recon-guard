@@ -176,7 +176,8 @@ If these diagnostics reject normality, the Gaussian detector remains useful as a
 Every statistical-enabled report adds:
 
 - `distributional_scores.csv` — out-of-fold detector scores and thresholds;
-- `distributional_summary.csv` — AUROC, average precision, detection rate and FPR for each detector/validation scheme;
+- `distributional_folds.csv` — fold-level AUROC, average precision, detection rate and FPR;
+- `distributional_summary.csv` — pooled and macro-fold metrics for each detector/validation scheme;
 - `gaussian_diagnostics.json` — univariate and multivariate normality diagnostics.
 
-This design avoids reporting an in-sample Gaussian fit as evidence of detection performance.
+Macro AUROC/AP are averaged across held-out folds because raw scores from independently fitted Gaussian models are not assumed to be perfectly calibrated across folds. This design avoids reporting an in-sample Gaussian fit as evidence of detection performance.
