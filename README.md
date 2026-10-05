@@ -45,7 +45,7 @@ This repository is intentionally scoped to a **synthetic service on an internal 
               experiment evaluator
                          │
                          ▼
-        CSV + JSONL + self-contained HTML report
+        CSV + JSONL + self-contained HTML report, including cross-validated distributional detector comparisons
 ```
 
 ## Quick start
@@ -73,6 +73,13 @@ manifest.json
 runs.jsonl
 raw_metrics.csv
 summary.csv
+classification.json
+classification_by_agents.csv
+effect_sizes.csv
+distributional_scores.csv
+distributional_folds.csv
+distributional_summary.csv
+gaussian_diagnostics.json
 report.html
 ```
 
@@ -119,7 +126,7 @@ The detector is intentionally evaluated without access to agent internals. See [
 
 | Suite | Agents | Repeats | Purpose |
 |---|---:|---:|---|
-| `smoke.yaml` | 10, 30 | 1 | CI / sanity check |
+| `smoke.yaml` | 10, 30 | 3 | CI / statistical sanity check |
 | `pilot.yaml` | 10, 100, 1,000 | 3 | fast local study |
 | `publication.yaml` | 10, 100, 1,000, 10,000 | 10 | paper-quality repeated matrix |
 
@@ -152,3 +159,31 @@ If you use the framework in academic work, please cite the repository using `CIT
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Distributional detection
+
+Version 0.2 adds a statistical detection layer on top of the original transparent collective-risk score.
+
+The report now evaluates four detectors out-of-fold:
+
+- **Heuristic** — the original interpretable collective-risk score.
+- **Gaussian OOD** — squared Mahalanobis distance from the benign collective-feature distribution.
+- **Gaussian LLR** — log-likelihood ratio between a benign Gaussian and a scenario-conditioned mixture of reconnaissance Gaussians.
+- **Hybrid** — a configurable fusion of the original heuristic score and the Gaussian LLR.
+
+Two validation schemes are produced automatically: `leave_repeat_out` and `leave_scale_out`. The latter tests whether a model trained on other swarm sizes generalizes to an unseen population size.
+
+Gaussian normality is not assumed blindly. Each report writes Shapiro-Wilk feature diagnostics plus Mardia multivariate skewness and kurtosis to `gaussian_diagnostics.json`.
+
+Example statistical configuration:
+
+```yaml
+statistical:
+  enabled: true
+  alpha: 0.01
+  shrinkage: 0.10
+  hybrid_weight: 0.50
+  validation_modes: [leave_repeat_out, leave_scale_out]
+```
+
+The corresponding output files are `distributional_scores.csv`, `distributional_folds.csv`, `distributional_summary.csv`, and `gaussian_diagnostics.json`. Macro AUROC/AP are averaged across held-out folds so scores from independently fitted folds are not treated as directly calibrated probabilities.

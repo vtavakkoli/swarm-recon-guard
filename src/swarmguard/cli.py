@@ -12,11 +12,11 @@ from swarmguard.reporting.report import build_report
 app = typer.Typer(name="swarmguard", no_args_is_help=True)
 
 @app.command()
-def generate(output: Path = typer.Option(...), agents: str = "10,100,1000,10000", scenarios: str = ",".join(SCENARIOS), repeats: int = 10, requests_per_agent: int = 3, concurrency: int = 256, seed: int = 20261005):
+def generate(output: Path = typer.Option(...), agents: str = "10,100,1000,10000", scenarios: str = ",".join(SCENARIOS), repeats: int = 10, requests_per_agent: int = 3, concurrency: int = 256, seed: int = 20261005, alpha: float = 0.01, shrinkage: float = 0.10, hybrid_weight: float = 0.50):
     names=[x.strip() for x in scenarios.split(",") if x.strip()]
     invalid=sorted(set(names)-set(SCENARIOS))
     if invalid: raise typer.BadParameter(f"unknown scenarios: {invalid}")
-    data={"name":output.stem,"agent_counts":[int(x) for x in agents.split(",")],"scenarios":names,"repeats":repeats,"requests_per_agent":requests_per_agent,"concurrency":concurrency,"arrival_window_ms":1000,"seed":seed,"baseline_identity_request_limit":20,"detector":{"threshold":0.72,"min_events":30,"consecutive_windows":2,"evaluation_interval":100}}
+    data={"name":output.stem,"agent_counts":[int(x) for x in agents.split(",")],"scenarios":names,"repeats":repeats,"requests_per_agent":requests_per_agent,"concurrency":concurrency,"arrival_window_ms":1000,"seed":seed,"baseline_identity_request_limit":20,"detector":{"threshold":0.72,"min_events":30,"consecutive_windows":2,"evaluation_interval":100},"statistical":{"enabled":True,"alpha":alpha,"shrinkage":shrinkage,"hybrid_weight":hybrid_weight,"validation_modes":["leave_repeat_out","leave_scale_out"]}}
     output.parent.mkdir(parents=True,exist_ok=True)
     output.write_text(yaml.safe_dump(data,sort_keys=False),encoding="utf-8")
     typer.echo(f"Wrote {output}")

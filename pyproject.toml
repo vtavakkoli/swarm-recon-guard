@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarm-recon-guard"
-version = "0.1.0"
+version = "0.2.0"
 description = "Docker-isolated benchmark for detecting distributed agentic reconnaissance from individually low-risk actions"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,6 +18,8 @@ dependencies = [
   "typer>=0.15,<1",
   "PyYAML>=6.0,<7",
   "jinja2>=3.1,<4",
+  "numpy>=2.1,<3",
+  "scipy>=1.14,<2",
 ]
 
 [project.optional-dependencies]
