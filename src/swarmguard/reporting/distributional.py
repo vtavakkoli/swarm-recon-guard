@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import statistics
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -198,12 +199,25 @@ def evaluate_distributional(
             tp = sum(bool(r["detected"]) for r in attack)
             fpl, fph = wilson_interval(fp, len(benign))
             tpl, tph = wilson_interval(tp, len(attack))
+            fold_aurocs = []
+            fold_aps = []
+            for fold in sorted({str(r["fold"]) for r in subset}):
+                fold_rows = [r for r in subset if str(r["fold"]) == fold]
+                fold_labels = [int(r["label"]) for r in fold_rows]
+                fold_scores = [float(r["score"]) for r in fold_rows]
+                if len(set(fold_labels)) == 2:
+                    fold_aurocs.append(auroc(fold_labels, fold_scores))
+                    fold_aps.append(average_precision(fold_labels, fold_scores))
             summary_rows.append({
                 "validation": mode,
                 "detector": detector,
                 "n": len(subset),
                 "auroc": auroc(labels, scores),
                 "average_precision": average_precision(labels, scores),
+                "macro_auroc_mean": statistics.fmean(fold_aurocs) if fold_aurocs else float("nan"),
+                "macro_auroc_std": statistics.stdev(fold_aurocs) if len(fold_aurocs) > 1 else 0.0,
+                "macro_ap_mean": statistics.fmean(fold_aps) if fold_aps else float("nan"),
+                "macro_ap_std": statistics.stdev(fold_aps) if len(fold_aps) > 1 else 0.0,
                 "false_positive_rate": fp / len(benign) if benign else float("nan"),
                 "false_positive_wilson_low": fpl,
                 "false_positive_wilson_high": fph,
@@ -217,6 +231,31 @@ def evaluate_distributional(
             w = csv.DictWriter(fh, fieldnames=list(score_rows[0]))
             w.writeheader()
             w.writerows(score_rows)
+
+        fold_summary_rows = []
+        keys = sorted({(str(r["validation"]), str(r["fold"]), str(r["detector"])) for r in score_rows})
+        for validation, fold, detector in keys:
+            subset = [r for r in score_rows if r["validation"] == validation and r["fold"] == fold and r["detector"] == detector]
+            labels = [int(r["label"]) for r in subset]
+            scores = [float(r["score"]) for r in subset]
+            benign = [r for r in subset if int(r["label"]) == 0]
+            attack = [r for r in subset if int(r["label"]) == 1]
+            fp = sum(bool(r["detected"]) for r in benign)
+            tp = sum(bool(r["detected"]) for r in attack)
+            fold_summary_rows.append({
+                "validation": validation,
+                "fold": fold,
+                "detector": detector,
+                "n": len(subset),
+                "auroc": auroc(labels, scores) if len(set(labels)) == 2 else float("nan"),
+                "average_precision": average_precision(labels, scores) if len(set(labels)) == 2 else float("nan"),
+                "false_positive_rate": fp / len(benign) if benign else float("nan"),
+                "detection_rate": tp / len(attack) if attack else float("nan"),
+            })
+        with (out / "distributional_folds.csv").open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(fold_summary_rows[0]))
+            w.writeheader()
+            w.writerows(fold_summary_rows)
     if summary_rows:
         with (out / "distributional_summary.csv").open("w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=list(summary_rows[0]))
