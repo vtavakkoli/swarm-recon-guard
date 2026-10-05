@@ -2,7 +2,7 @@ name: smoke
 description: Minimal end-to-end CI validation.
 agent_counts: [10, 30]
 scenarios: [benign_flash, independent_recon, coordinated_swarm]
-repeats: 1
+repeats: 3
 requests_per_agent: 3
 concurrency: 32
 arrival_window_ms: 50
