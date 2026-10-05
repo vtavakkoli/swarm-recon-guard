@@ -77,6 +77,31 @@ def _validate_lab_url(url: str, allowed_hosts: set[str] | None = None) -> None:
         raise RuntimeError(f"Refusing target {url!r}. Lab hosts only: {sorted(allowed_hosts)}")
 
 
+def attach_wall_exposure(online: dict) -> None:
+    """Audit what the service already exposed when the observer actually alarmed."""
+    events = online.get("events", [])
+    final_coverage = online.get("semantic_coverage", 0)
+    alarms = []
+    for name, method in online.get("methods", {}).items():
+        method["wall_exposure_at_detection"] = None
+        method["wall_exposure_at_alarm_or_end"] = final_coverage if not method["detected"] else None
+        if method["detected"] and events:
+            alarms.append((method["alarm_wall_timestamp"], name))
+    if not alarms:
+        return
+    ordered = sorted(events, key=lambda event: float(event["ts"]))
+    keys, index = set(), 0
+    for timestamp, name in sorted(alarms):
+        while index < len(ordered) and float(ordered[index]["ts"]) <= timestamp:
+            event = ordered[index]
+            if event.get("family") in ("ticket", "permit_prefix", "zone"):
+                keys.add((event["family"], event["resource_key"]))
+            index += 1
+        coverage = len(keys) / TOTAL_SEMANTIC_SPACE
+        online["methods"][name]["wall_exposure_at_detection"] = coverage
+        online["methods"][name]["wall_exposure_at_alarm_or_end"] = coverage
+
+
 async def _wait_ready(client: httpx.AsyncClient, url: str, timeout_s: float = 30.0) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -89,12 +114,23 @@ async def _wait_ready(client: httpx.AsyncClient, url: str, timeout_s: float = 30
     raise RuntimeError(f"service did not become ready: {url}")
 
 
-async def _run_one(*, client: httpx.AsyncClient, detector_client: httpx.AsyncClient,
+async def _run_one(**kwargs) -> dict[str, object]:
+    run_id = "run-" + uuid.uuid4().hex
+    try:
+        return await _measure_one(run_id=run_id, **kwargs)
+    finally:
+        await asyncio.gather(
+            kwargs["detector_client"].delete(f"{kwargs['detector_url']}/runs/{run_id}"),
+            kwargs["client"].delete(f"{kwargs['gateway_url']}/_lab/telemetry/{run_id}"),
+            return_exceptions=True,
+        )
+
+
+async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.AsyncClient,
                    gateway_url: str, detector_url: str, scenario: str, agent_count: int,
                    repeat: int, suite: dict, out: Path | None = None,
-                   capture_reference: bool = False) -> dict[str, object]:
+                   capture_reference: bool = False, run_id: str) -> dict[str, object]:
     # Opaque stream id: labels and membership remain evaluator-only.
-    run_id = "run-" + uuid.uuid4().hex
     requests_per_agent = int(suite.get("requests_per_agent", 3))
     concurrency = int(suite.get("concurrency", 256))
     arrival_window_ms = float(suite.get("arrival_window_ms", 1000))
@@ -190,6 +226,7 @@ async def _run_one(*, client: httpx.AsyncClient, detector_client: httpx.AsyncCli
         names = tuple(population_findings.discovered())
         discovered = {name: any(flags and flags.get(name, False) for flags in individual_flags) for name in names}
     online = snapshot.get("online", {})
+    attach_wall_exposure(online)
     if out is not None and online:
         with (out / "window_traces.jsonl").open("a", encoding="utf-8") as fh:
             for window in online.pop("windows", []):
@@ -233,9 +270,6 @@ async def _run_one(*, client: httpx.AsyncClient, detector_client: httpx.AsyncCli
     }
     if capture_reference:
         row["reference_events"] = snapshot.get("reference_events", [])
-    released = await detector_client.delete(f"{detector_url}/runs/{run_id}")
-    released.raise_for_status()
-    await client.delete(f"{gateway_url}/_lab/telemetry/{run_id}")
     return row
 
 
@@ -289,9 +323,9 @@ async def run_suite(suite_path: Path, result_root: Path | None = None) -> Path:
         async with httpx.AsyncClient(timeout=timeout, limits=limits, trust_env=False) as client, httpx.AsyncClient(timeout=120, trust_env=False) as detector_client:
             await _wait_ready(client, f"{gateway_url}/healthz")
             await _wait_ready(detector_client, f"{detector_url}/healthz")
+            cleared = await detector_client.delete(f"{detector_url}/configure")
+            cleared.raise_for_status()
             if suite.get("online", {}).get("enabled", True):
-                cleared = await detector_client.delete(f"{detector_url}/configure")
-                cleared.raise_for_status()
                 if suite.get("calibration", {}).get("source", "http") == "http":
                     async def collect(scenario, n, stream_seed):
                         return await _run_one(

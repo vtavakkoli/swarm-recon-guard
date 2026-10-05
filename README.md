@@ -115,6 +115,7 @@ The detector sees the whole trial stream in mixed tests. Membership is evaluator
 - Three component ablations with their own calibrated thresholds.
 - Offline macro-fold metrics, effect sizes and Gaussian assumption diagnostics.
 - HTTP p50/p95/p99, throughput, transport errors, matched benign SLA deltas and detector processing cost.
+- Event-prefix versus actual wall-clock alarm delay/exposure, including telemetry processing lag.
 - Calibration resolution, horizon checks, trace completeness, host metadata, limitations and an executive summary.
 
 Namespace coverage is a proxy for information acquisition. It is not a verified percentage of recovered secrets. Alarms are observational and do not block requests; SLA deltas measure traffic effects, not mitigation benefits.

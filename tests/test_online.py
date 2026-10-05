@@ -67,7 +67,9 @@ def test_bundle_json_roundtrip_preserves_online_decisions(fitted_bundle):
         b.update(event)
     a.finalize()
     b.finalize()
-    assert a.snapshot()["methods"] == b.snapshot()["methods"]
+    for method in ALL_METHODS:
+        for key in ("peak_score", "detected", "exposure_before_detection", "requests_at_detection"):
+            assert a.snapshot()["methods"][method][key] == b.snapshot()["methods"][method][key]
     assert a.snapshot()["requests"] == 120
 
 

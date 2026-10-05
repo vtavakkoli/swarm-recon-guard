@@ -98,6 +98,7 @@ The three synthetic information channels are ticket-existence/status enumeration
 - EBD is namespace coverage at the first alarm window.
 - Exposure at alarm **or end** uses final coverage for missed attacks, so missed runs cannot disappear from exposure summaries.
 - Detection delay is gateway-event elapsed time to the first alarm window. Misses are censored and counted; their delay is not replaced with zero.
+- Wall-clock alarm timestamps and processing lag expose ingestion/computation delay. Gateway events timestamped before the actual alarm audit wall-clock service exposure; this can exceed event-prefix EBD when the observer has a backlog. These operational timings are measured, not replayed as deterministic model outputs.
 - Request count at alarm, precision, F1, confusion counts and known/unseen policy breakdowns supplement AUROC.
 - HTTP latency/throughput, transport errors, telemetry failures and detector CPU time per event describe operational cost.
 

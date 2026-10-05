@@ -41,6 +41,8 @@ class StreamDetector:
 
     def _score(self, row: dict) -> None:
         scores = self.bundle.score(row, self.method_state)
+        completed_at = time.time()
+        row["processing_lag_ms"] = max(0.0, 1000 * (completed_at - row["end_ts"]))
         row["scores"] = scores
         self.windows.append(row)
         for name, score in scores.items():
@@ -52,6 +54,9 @@ class StreamDetector:
                     "requests_at_detection": row["cumulative_requests"],
                     "exposure_before_detection": row["cumulative_coverage"],
                     "detection_delay_ms": 1000 * max(0.0, row["end_ts"] - float(self.start_ts)),
+                    "alarm_wall_timestamp": completed_at,
+                    "wall_detection_delay_ms": 1000 * max(0.0, completed_at - float(self.start_ts)),
+                    "processing_lag_ms": row["processing_lag_ms"],
                 }
 
     def finalize(self) -> None:
@@ -80,12 +85,16 @@ class StreamDetector:
                 "exposure_at_alarm_or_end": alarm["exposure_before_detection"] if alarm else final_coverage,
                 "detection_delay_ms": alarm["detection_delay_ms"] if alarm else None,
                 "requests_at_detection": alarm["requests_at_detection"] if alarm else None,
+                "alarm_wall_timestamp": alarm["alarm_wall_timestamp"] if alarm else None,
+                "wall_detection_delay_ms": alarm["wall_detection_delay_ms"] if alarm else None,
+                "processing_lag_ms": alarm["processing_lag_ms"] if alarm else None,
             }
         result = {
             "requests": requests, "windows_processed": len(self.windows), "finalized": self.finalized,
             "methods": methods, "semantic_coverage": final_coverage,
             "processing_ms": self.processing_ns / 1e6,
             "processing_us_per_event": self.processing_ns / 1000 / max(1, requests),
+            "processing_lag_p95_ms": sorted(row["processing_lag_ms"] for row in self.windows)[min(len(self.windows) - 1, int(len(self.windows) * .95))] if self.windows else None,
         }
         if include_windows:
             result["windows"] = self.windows

@@ -3,6 +3,8 @@ import numpy as np
 from swarmguard.experiment.policies import SCENARIOS, attack_members, build_actions
 from swarmguard.reporting.report import _classification
 from swarmguard.reporting.stats import average_precision
+from swarmguard.experiment.runner import attach_wall_exposure
+from swarmguard.config import TOTAL_SEMANTIC_SPACE
 
 
 def test_every_policy_has_equal_budget_and_seeded_repeats_vary():
@@ -49,3 +51,17 @@ def test_exposure_summary_includes_missed_attacks():
 def test_average_precision_ties_are_order_invariant():
     assert average_precision([1, 0, 1, 0], [0.5] * 4) == 0.5
     assert average_precision([0, 0, 1, 1], [0.5] * 4) == 0.5
+
+
+def test_wall_exposure_accounts_for_telemetry_backlog():
+    online = {
+        "semantic_coverage": 3 / TOTAL_SEMANTIC_SPACE,
+        "events": [{"ts": str(1000 + i), "family": "ticket", "resource_key": str(i)} for i in range(3)],
+        "methods": {
+            "alarm": {"detected": True, "alarm_wall_timestamp": 1001.5},
+            "miss": {"detected": False},
+        },
+    }
+    attach_wall_exposure(online)
+    assert online["methods"]["alarm"]["wall_exposure_at_detection"] == 2 / TOTAL_SEMANTIC_SPACE
+    assert online["methods"]["miss"]["wall_exposure_at_alarm_or_end"] == 3 / TOTAL_SEMANTIC_SPACE

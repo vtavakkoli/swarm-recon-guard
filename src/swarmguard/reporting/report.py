@@ -125,6 +125,9 @@ def _classification(records: list[dict]) -> dict:
         "detection_delay_median_ms": _median(row["detection_delay_ms"] for row in detected_attack),
         "detected_attack_count": len(detected_attack), "censored_miss_count": fn,
         "requests_at_detection_median": _median(row["requests_at_detection"] for row in detected_attack),
+        "wall_detection_delay_median_ms": _median(row.get("wall_detection_delay_ms") for row in detected_attack),
+        "alarm_processing_lag_median_ms": _median(row.get("processing_lag_ms") for row in detected_attack),
+        "wall_exposure_at_alarm_or_end_mean": _mean(row.get("wall_exposure_at_alarm_or_end") for row in attack),
     }
 
 
@@ -239,6 +242,7 @@ def build_report(runs: list[dict[str, object]], manifest: dict[str, object], out
                                        "throughput_delta_pct", "telemetry_processed", "telemetry_failures", "measurement_valid")},
         "detector_processing_us_per_event": row.get("online", {}).get("processing_us_per_event"),
         "windows_processed": row.get("online", {}).get("windows_processed"),
+        "detector_processing_lag_p95_ms": row.get("online", {}).get("processing_lag_p95_ms"),
     } for row in runs]
     _write_csv(out / "service_metrics.csv", service_rows)
     legacy = [{"label": row["label"], "detected": row["detected"], "peak_score": row["detector_score_peak"],
@@ -280,7 +284,7 @@ def build_report(runs: list[dict[str, object]], manifest: dict[str, object], out
         "Coordination is observable behavior, not proof of malicious intent; legitimate broad workflows are hard negative controls.",
         "Semantic coverage measures observed resource keys, not a verified percentage of reconstructed secret information.",
         "EBD among detected attacks is selection-biased; exposure at alarm or end and missed-attack counts are reported alongside it.",
-        "Detection delay is gateway-event time to the first scored alarm window; it excludes additional deployment action latency.",
+        "Event-prefix delay/exposure exclude telemetry backlog. Wall-clock delay, processing lag and service exposure at the actual alarm are reported separately; deployment action latency remains unmeasured.",
         "Detectors observe the whole experimental stream, including mixed benign and attacker identities; true membership is evaluator-only.",
         "The benchmark is observational: alarms do not block requests, so measured SLA differences are traffic effects, not mitigation benefits.",
         "Offline leave-scale/attack-out results use independent nested calibration but small folds cannot substantiate a 1% FPR.",
@@ -311,12 +315,13 @@ def build_report(runs: list[dict[str, object]], manifest: dict[str, object], out
     (out / "executive_summary.md").write_text(summary_text, encoding="utf-8")
 
     online_table = _table(
-        ["Method", "AUROC", "AP", "Detection [95% CI]", "FPR [95% CI]", "Precision", "Misses", "EBD, detected", "Exposure, alarm/end", "Median delay ms"],
+        ["Method", "AUROC", "AP", "Detection [95% CI]", "FPR [95% CI]", "Precision", "Misses", "EBD, detected", "Exposure, alarm/end", "Wall exposure, alarm/end", "Event delay ms", "Wall delay ms"],
         [[html.escape(row["method"]), _fmt(row["auroc"]), _fmt(row["average_precision"]),
           _interval(row["tp"], row["n_attack"]), _interval(row["fp"], row["n_benign"]),
           _fmt(row["precision"], True), f'{row["fn"]}/{row["n_attack"]}',
           _fmt(row["ebd_detected_mean"], True), _fmt(row["exposure_at_alarm_or_end_mean"], True),
-          _fmt(row["detection_delay_median_ms"])] for row in method_summary if row["method"] in METHODS],
+          _fmt(row["wall_exposure_at_alarm_or_end_mean"], True), _fmt(row["detection_delay_median_ms"]),
+          _fmt(row["wall_detection_delay_median_ms"])] for row in method_summary if row["method"] in METHODS],
     )
     scale_table = _table(
         ["Method", "Agents", "Detection", "FPR", "AUROC", "Exposure, alarm/end", "Misses"],
@@ -395,7 +400,7 @@ dt{{font-weight:650;margin-top:12px}}dd{{margin-left:0;color:var(--muted)}}.arti
 <div class="cards">{card_html}</div><section><span class="status">Measurement integrity: {"complete" if integrity["complete"] else "incomplete"}</span>{operational}
 <p class="note">HTTP test runs are separate from training and calibration. The reference source is recorded below; publication uses measured gateway traffic for all three phases. A configured false-alarm target is not a measured production guarantee.</p></section>
 <section id="online"><h2>Online detector comparison</h2>{online_table}
-<p class="note">95% Wilson intervals describe independent run outcomes. Delay and EBD among detected attacks exclude misses; the adjacent exposure-at-alarm-or-end metric includes every attack run. Precision/AP reflect this benchmark's class proportions.</p>
+<p class="note">95% Wilson intervals describe independent run outcomes. Delay and EBD among detected attacks exclude misses; exposure-at-alarm-or-end includes every attack run. Event-prefix EBD excludes ingestion backlog; wall exposure audits gateway events timestamped before the actual alarm. Precision/AP reflect this benchmark's class proportions.</p>
 <div class="columns"><div><h3>Detection rate</h3>{_bar_svg(method_summary, "detection_rate", "Detection rate")}</div>
 <div><h3>Exposure at alarm or end</h3>{_bar_svg(method_summary, "exposure_at_alarm_or_end_mean", "Exposure at alarm or end")}</div></div></section>
 <section id="traces"><h2>Alarm score trajectories</h2><p class="note">Predetermined repetition 0 for each scenario and population. Curves are downsampled for display; all windows and raw gateway events are saved in the artifacts.</p>
