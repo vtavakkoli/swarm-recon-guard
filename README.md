@@ -77,6 +77,7 @@ classification.json
 classification_by_agents.csv
 effect_sizes.csv
 distributional_scores.csv
+distributional_folds.csv
 distributional_summary.csv
 gaussian_diagnostics.json
 report.html
@@ -185,4 +186,4 @@ statistical:
   validation_modes: [leave_repeat_out, leave_scale_out]
 ```
 
-The corresponding output files are `distributional_scores.csv`, `distributional_summary.csv`, and `gaussian_diagnostics.json`.
+The corresponding output files are `distributional_scores.csv`, `distributional_folds.csv`, `distributional_summary.csv`, and `gaussian_diagnostics.json`. Macro AUROC/AP are averaged across held-out folds so scores from independently fitted folds are not treated as directly calibrated probabilities.
