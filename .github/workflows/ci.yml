@@ -29,6 +29,9 @@ jobs:
         run: |
           SWARM_UID=$(id -u) SWARM_GID=$(id -g) docker compose run --rm experiment run --suite /app/scenarios/smoke.yaml
           python scripts/validate_results.py results
+          RUN_DIR=$(find results -maxdepth 1 -type d -name 'smoke-*' | sort | tail -1)
+          python -m swarmguard.experiment.reviewer_controls --run-dir "$RUN_DIR" --alpha 0.10 --prefixes 30
+          python scripts/package_evidence.py --run-dir "$RUN_DIR" --output results/smoke-evidence.zip
       - name: Upload complete smoke reports and traces
         if: always()
         uses: actions/upload-artifact@v4
