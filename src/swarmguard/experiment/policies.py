@@ -9,10 +9,12 @@ from swarmguard.config import PERMIT_PREFIX_SPACE, TICKET_SPACE, ZONE_SPACE
 
 ALPHABET = string.digits + string.ascii_uppercase
 COMMON_PREFIXES = ["A0", "A1", "B0", "B1", "C0", "C1", "D0", "E0", "F0", "G0"]
-BENIGN_SCENARIOS = ("benign_flash", "benign_diagnostic", "benign_explorer", "benign_bulk")
+BENIGN_SCENARIOS = ("benign_flash", "benign_diagnostic", "benign_explorer", "benign_bulk",
+                    "benign_explorer_diagnostic")
 ATTACK_SCENARIOS = (
     "independent_recon", "coordinated_swarm", "swarm_no_diagnostic",
     "matched_swarm", "camouflaged_swarm", "low_and_slow_swarm", "mixed_swarm",
+    "matched_swarm_diagnostic", "independent_recon_no_diagnostic",
 )
 SCENARIOS = BENIGN_SCENARIOS + ATTACK_SCENARIOS
 KNOWN_ATTACK_SCENARIOS = ("independent_recon", "coordinated_swarm")
@@ -112,7 +114,8 @@ def build_actions(scenario: str, *, agent_idx: int, agent_count: int,
         elif policy == "benign_bulk":
             # Legitimate broad, repetitive batch work is an intentionally hard negative.
             value = (agent_idx * 31 + occurrence * 101 + repeat_seed) % SPACES[family]
-        elif policy in ("independent_recon", "benign_explorer"):
+        elif policy in ("independent_recon", "benign_explorer", "independent_recon_no_diagnostic",
+                      "benign_explorer_diagnostic"):
             value = rng.randrange(SPACES[family])
         else:
             value = _partition_index(
@@ -122,6 +125,8 @@ def build_actions(scenario: str, *, agent_idx: int, agent_count: int,
 
         if policy in ("independent_recon", "coordinated_swarm"):
             diagnostic = True
+        elif policy in ("benign_explorer_diagnostic", "matched_swarm_diagnostic"):
+            diagnostic = rng.random() < 0.75
         elif policy == "benign_diagnostic":
             diagnostic = rng.random() < 0.75
         elif policy in ("matched_swarm", "benign_explorer", "mixed_swarm"):

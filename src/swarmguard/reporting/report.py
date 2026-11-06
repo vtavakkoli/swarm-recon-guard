@@ -90,6 +90,7 @@ def _method_records(runs: list[dict]) -> list[dict]:
                 "repeat": run["repeat"], "label": run["label"], "method": method,
                 "known_attack": run["scenario"] in KNOWN_ATTACK_SCENARIOS,
                 "final_coverage": run["semantic_coverage"],
+                "attacker_final_coverage": run.get("attacker_semantic_coverage"),
                 "processing_us_per_event": run["online"].get("processing_us_per_event"),
                 "windows_processed": run["online"].get("windows_processed"), **result,
             })
@@ -129,6 +130,14 @@ def _classification(records: list[dict]) -> dict:
         "wall_detection_delay_median_ms": _median(row.get("wall_detection_delay_ms") for row in detected_attack),
         "alarm_processing_lag_median_ms": _median(row.get("processing_lag_ms") for row in detected_attack),
         "wall_exposure_at_alarm_or_end_mean": _mean(row.get("wall_exposure_at_alarm_or_end") for row in attack),
+        "final_coverage_mean": _mean(row.get("final_coverage") for row in attack),
+        "fraction_final_coverage_at_alarm_mean": _mean(row.get("fraction_final_coverage_at_alarm") for row in detected_attack),
+        "attacker_final_coverage_mean": _mean(row.get("attacker_final_coverage") for row in attack),
+        "attacker_exposure_at_alarm_or_end_mean": _mean(row.get("attacker_exposure_at_alarm_or_end") for row in attack),
+        "attacker_wall_exposure_at_alarm_or_end_mean": _mean(row.get("attacker_wall_exposure_at_alarm_or_end") for row in attack),
+        "windows_to_alarm_median": _median(row.get("windows_to_alarm") for row in detected_attack),
+        "during_stream_alarms": sum(row.get("alarm_origin") == "during_stream" for row in records),
+        "terminal_only_alarms": sum(row.get("alarm_origin") == "terminal_flush" for row in records),
     }
 
 
@@ -325,16 +334,26 @@ def build_report(runs: list[dict[str, object]], manifest: dict[str, object], out
           _fmt(row["wall_detection_delay_median_ms"])] for row in method_summary if row["method"] in METHODS],
     )
     scale_table = _table(
-        ["Method", "Agents", "Detection", "FPR", "AUROC", "Exposure, alarm/end", "Misses"],
-        [[html.escape(row["method"]), f'{row["agent_count"]:,}', _fmt(row["detection_rate"], True),
-          _fmt(row["false_positive_rate"], True), _fmt(row["auroc"]),
-          _fmt(row["exposure_at_alarm_or_end_mean"], True), str(row["fn"])] for row in by_scale if row["method"] in METHODS], filterable=True,
+        ["Method", "Agents", "Detection [95% CI]", "FPR [95% CI]", "AUROC",
+         "Exposure alarm/end", "Final coverage", "Terminal alarms", "Misses"],
+        [[html.escape(row["method"]), f'{row["agent_count"]:,}',
+          _interval(row["tp"], row["n_attack"]), _interval(row["fp"], row["n_benign"]),
+          _fmt(row["auroc"]), _fmt(row["exposure_at_alarm_or_end_mean"], True),
+          _fmt(row["final_coverage_mean"], True), str(row["terminal_only_alarms"]), str(row["fn"])]
+         for row in by_scale if row["method"] in METHODS], filterable=True,
     )
     scenario_table = _table(
-        ["Method", "Scenario", "Agents", "Alarm rate", "Exposure, alarm/end", "Median delay ms", "Runs"],
+        ["Method", "Scenario", "Agents", "Alarm rate [95% CI]", "Exposure alarm/end",
+         "Final coverage", "Attacker-only exposure", "Fraction final coverage at alarm",
+         "Windows to alarm", "Terminal alarms", "Wall exposure", "Runs"],
         [[html.escape(row["method"]), html.escape(row["scenario"]), str(row["agent_count"]),
-          _fmt(row["detection_rate"] if row["n_attack"] else row["false_positive_rate"], True),
-          _fmt(row["exposure_at_alarm_or_end_mean"], True), _fmt(row["detection_delay_median_ms"]), str(row["n"])]
+          _interval(row["tp"] if row["n_attack"] else row["fp"],
+                    row["n_attack"] if row["n_attack"] else row["n_benign"]),
+          _fmt(row["exposure_at_alarm_or_end_mean"], True), _fmt(row["final_coverage_mean"], True),
+          _fmt(row["attacker_exposure_at_alarm_or_end_mean"], True),
+          _fmt(row["fraction_final_coverage_at_alarm_mean"], True),
+          _fmt(row["windows_to_alarm_median"]), str(row["terminal_only_alarms"]),
+          _fmt(row["wall_exposure_at_alarm_or_end_mean"], True), str(row["n"])]
          for row in by_scenario if row["method"] in METHODS], filterable=True,
     )
     service_table = _table(
