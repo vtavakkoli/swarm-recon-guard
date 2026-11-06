@@ -19,6 +19,7 @@ from swarmguard.detector.online import DetectorBundle
 from swarmguard.detector.streaming import StreamDetector
 from swarmguard.detector.windows import extract_windows
 from swarmguard.experiment.policies import BENIGN_SCENARIOS, FAMILIES, SPACES, ALPHABET
+from swarmguard.experiment.matching import marginal_profile, comparison
 from swarmguard.reporting.report import _write_csv
 from swarmguard.reporting.stats import wilson_interval
 
@@ -163,7 +164,7 @@ def _scored_prefix(bundle, config, events, horizon):
     detector.finalize()
     snap = detector.snapshot()
     return {method: snap["methods"][method] for method in CONTROL_METHODS} | {
-        "windows": snap["windows_processed"]
+        "windows": snap["windows_processed"], "window_rows": detector.windows
     }
 
 
@@ -222,12 +223,13 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
             json.dumps(ablation_meta, indent=2), encoding="utf-8")
 
     thresholds = {key: calibrated_threshold(scores, alpha)[0] for key, scores in calibration_prefix.items()}
-    identity_rows, prefix_rows, ablation_rows = [], [], []
+    identity_rows, prefix_rows, ablation_rows, marginal_rows = [], [], [], []
     for run_id, events in grouped_events(tests, "run_id"):
         source = labels[run_id]
         if not source.get("measurement_valid", True):
             continue
         common = {key: source[key] for key in ("run_id", "scenario", "agent_count", "repeat", "label")}
+        marginal_rows.append(common | marginal_profile(events))
         score = baseline.score(events)
         identity_rows.append(common | {"method": "per_identity_semantic_ood",
             "peak_score": score, "threshold": finite_or_none(baseline.threshold),
@@ -239,12 +241,15 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
             for method in CONTROL_METHODS:
                 threshold = thresholds.get((horizon, method), math.inf)
                 observed = sampled[method]
+                first_crossing = next((w for w in sampled["window_rows"]
+                                       if w["scores"][method] > threshold), None)
                 prefix_rows.append(common | {
                     "method": method, "event_prefix": horizon,
                     "n_calibration_streams": len(calibration_prefix[(horizon, method)]),
                     "peak_score": observed["peak_score"], "threshold": finite_or_none(threshold),
                     "detected": bool(observed["peak_score"] is not None and observed["peak_score"] > threshold),
-                    "terminal_only_alarm": bool(observed.get("terminal_only_alarm")),
+                    "terminal_only_alarm": bool(first_crossing and first_crossing["terminal_flush"]),
+                    "windows_to_alarm": first_crossing["window_index"] + 1 if first_crossing else None,
                     "windows": sampled["windows"],
                 })
         if ablated:
@@ -265,6 +270,20 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
     ]:
         _write_csv(run_dir / (name + "_runs.csv"), values)
         _write_csv(run_dir / (name + "_summary.csv"), summary(values, groups))
+    _write_csv(run_dir / "observable_marginals.csv", marginal_rows)
+    profiles = {(row["agent_count"], row["repeat"], row["scenario"]): row for row in marginal_rows}
+    matches = []
+    for benign, attack in (
+        ("benign_explorer", "matched_swarm"),
+        ("benign_explorer_diagnostic", "matched_swarm_diagnostic"),
+        ("benign_explorer", "independent_recon_no_diagnostic"),
+    ):
+        for key in sorted({(row["agent_count"], row["repeat"]) for row in marginal_rows}):
+            a, b = profiles.get((*key, benign)), profiles.get((*key, attack))
+            if a and b:
+                matches.append({"control_scenario": benign, "attack_scenario": attack,
+                                "agent_count": key[0], "repeat": key[1], **comparison(a, b)})
+    _write_csv(run_dir / "paired_marginal_diagnostics.csv", matches)
     metadata = {
         "alpha": alpha, "prefixes": list(prefixes),
         "methods": list(CONTROL_METHODS),
@@ -275,6 +294,7 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
             "Matched event prefixes are eligible only when source stream contains at least that many events.",
             "Prefix thresholds are recalibrated on independent benign prefixes; scoring a forced terminal tail is explicitly non-prospective.",
             "No-diagnostic ablation refits and recalibrates on stripped reference telemetry; it is not evidence about counterfactual HTTP response payloads.",
+            "Paired marginal checks compare diagnostic rates and per-family 16-bin key distributions at matched population and repeat.",
             "Calibration controls marginal stream false alarms only under comparable exchangeable benign horizons; not a per-scale production guarantee.",
         ],
     }
