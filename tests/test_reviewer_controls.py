@@ -88,3 +88,20 @@ def test_terminal_flush_is_identified():
     assert result["alarm_origin"] == "terminal_flush"
     assert result["terminal_only_alarm"] is True
     assert result["windows_to_alarm"] == 1
+
+
+
+def test_paired_marginal_diagnostics_ignore_identity_spelling():
+    from swarmguard.experiment.matching import marginal_profile, comparison, js_divergence
+    stream = reference_events("benign_explorer_diagnostic", agent_count=20,
+                              requests_per_agent=3, seed=51, repeat=0)
+    profile = marginal_profile(stream)
+    renamed = [{**e, "identity": "renamed-" + e["identity"]} for e in stream]
+    other = marginal_profile(renamed)
+    assert profile == other
+    assert all(profile["histograms"][family] == other["histograms"][family]
+               for family in ("ticket", "permit_prefix", "zone"))
+    diff = comparison(profile, other)
+    assert diff["absolute_zone_diagnostic_rate_difference"] == 0
+    assert diff["ticket_histogram_js_bits"] == 0
+    assert js_divergence([1, 0], [0, 1]) == 1
