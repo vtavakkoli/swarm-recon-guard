@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import hashlib
+import importlib.metadata
 import json
 import math
 import os
@@ -100,6 +101,67 @@ def attach_wall_exposure(online: dict) -> None:
         coverage = len(keys) / TOTAL_SEMANTIC_SPACE
         online["methods"][name]["wall_exposure_at_detection"] = coverage
         online["methods"][name]["wall_exposure_at_alarm_or_end"] = coverage
+
+
+
+def attach_attacker_exposure(online: dict, members: frozenset[int]) -> None:
+    """Evaluator-only membership audit; detector receives no membership labels."""
+    events = online.get("events", [])
+    if not events:
+        return
+
+    def is_attacker(event):
+        identity = str(event.get("identity", ""))
+        try:
+            return identity.startswith("u-") and int(identity[2:]) in members
+        except ValueError:
+            return False
+
+    def coverage(sequence):
+        return len({(e["family"], e["resource_key"]) for e in sequence
+                    if is_attacker(e) and e.get("family") in ("ticket", "permit_prefix", "zone")}) / TOTAL_SEMANTIC_SPACE
+
+    final = coverage(events)
+    by_time = sorted(events, key=lambda e: float(e.get("ts", 0)))
+    for method in online.get("methods", {}).values():
+        method["attacker_final_coverage"] = final
+        if method.get("detected"):
+            prefix = coverage(events[:int(method.get("requests_at_detection") or 0)])
+            alarm_time = method.get("alarm_wall_timestamp")
+            wall = (coverage(e for e in by_time if float(e.get("ts", 0)) <= alarm_time)
+                    if alarm_time is not None else None)
+        else:
+            prefix, wall = final, final
+        method["attacker_exposure_at_alarm_or_end"] = prefix
+        method["attacker_wall_exposure_at_alarm_or_end"] = wall
+        method["attacker_fraction_final_coverage_at_alarm"] = (
+            prefix / final if final > 0 and method.get("detected") else None
+        )
+
+
+def _system_specification() -> dict:
+    result = {"processor": platform.processor() or "unreported"}
+    for name in ("numpy", "scipy", "fastapi", "httpx", "redis", "PyYAML", "uvicorn"):
+        try:
+            result["dependency_" + name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            result["dependency_" + name] = None
+    for label, path in (
+        ("cgroup_memory_max_bytes", "/sys/fs/cgroup/memory.max"),
+        ("cgroup_cpu_max", "/sys/fs/cgroup/cpu.max"),
+        ("host_mem_total_kb", "/proc/meminfo"),
+        ("cpu_model", "/proc/cpuinfo"),
+    ):
+        try:
+            data = Path(path).read_text()
+            if label == "host_mem_total_kb":
+                data = next(line for line in data.splitlines() if line.startswith("MemTotal:"))
+            elif label == "cpu_model":
+                data = next(line for line in data.splitlines() if line.startswith("model name"))
+            result[label] = data.strip()
+        except (OSError, StopIteration):
+            result[label] = None
+    return result
 
 
 async def _wait_ready(client: httpx.AsyncClient, url: str, timeout_s: float = 30.0) -> None:
@@ -279,6 +341,7 @@ async def _measure_one(*, client: httpx.AsyncClient, detector_client: httpx.Asyn
         discovered = {name: any(flags and flags.get(name, False) for flags in individual_flags) for name in names}
     online = snapshot.get("online", {})
     attach_wall_exposure(online)
+    attach_attacker_exposure(online, members)
     if out is not None and online:
         with (out / "window_traces.jsonl").open("a", encoding="utf-8") as fh:
             for window in online.pop("windows", []):
@@ -362,7 +425,7 @@ async def run_suite(suite_path: Path, result_root: Path | None = None) -> Path:
         "framework": "SwarmReconGuard", "version": __version__, "suite": suite,
         "suite_file": str(suite_path), "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(), "platform": platform.platform(),
-        "cpu_count": os.cpu_count(), "machine": platform.machine(),
+        "cpu_count": os.cpu_count(), "machine": platform.machine(), "system_specification": _system_specification(),
         "suite_sha256": hashlib.sha256(suite_path.read_bytes()).hexdigest(),
         "git_commit": os.getenv("SWARM_COMMIT", "not supplied"),
         "safety_scope": "synthetic internal Docker service only",
@@ -416,6 +479,10 @@ async def run_suite(suite_path: Path, result_root: Path | None = None) -> Path:
         manifest.update({"status": "completed", "run_count": len(runs), "elapsed_seconds": time.perf_counter() - started})
         build_report(runs, manifest, out)
         (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        with (out / "artifact_checksums.sha256").open("w", encoding="utf-8") as fh:
+            for artifact in sorted(out.iterdir()):
+                if artifact.is_file() and artifact.name != "artifact_checksums.sha256":
+                    fh.write(f"{hashlib.sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}\n")
     except Exception as exc:
         manifest.update({"status": "failed", "completed_runs": len(runs), "error": f"{type(exc).__name__}: {exc}"})
         (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
