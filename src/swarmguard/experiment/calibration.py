@@ -87,7 +87,11 @@ def prepare_bundle(suite: dict, out: Path) -> tuple[DetectorBundle, dict]:
         if (index + 1) % 50 == 0:
             print(f"[reference] calibration {index + 1}/{calibration_streams}", flush=True)
     calibration_report = bundle.calibrate(heldout, alpha)
+    from collections import Counter
+    strata = Counter((row["scenario"], row["agent_count"]) for row in metadata if row["phase"] == "calibration")
     calibration_report.update({
+        "calibration_strata": [dict(scenario=s, agent_count=n, n_streams=count) for (s, n), count in sorted(strata.items())],
+        "calibration_selection": "independent RNG choices of benign workload and scale; see reference_manifest.jsonl",
         "reference_source": "synthetic policy telemetry; independent of measured HTTP test traffic",
         "training_streams": len(training), "training_windows": sum(map(len, training)),
         "reference_agent_counts": scales, "benign_training_scenarios": list(benign_regimes),
@@ -158,7 +162,11 @@ async def prepare_http_bundle(suite: dict, out: Path, collect) -> tuple[Detector
     for index in range(n_calibration):
         heldout.append(await measure("calibration", index, rng.choice(benign), rng.choice(scales)))
     report = bundle.calibrate(heldout, float(calibration.get("alpha", 0.01)))
+    from collections import Counter
+    strata = Counter((row["scenario"], row["agent_count"]) for row in metadata if row["phase"] == "calibration")
     report.update({
+        "calibration_strata": [dict(scenario=s, agent_count=n, n_streams=count) for (s, n), count in sorted(strata.items())],
+        "calibration_selection": "independent RNG choices of benign workload and scale; see reference_manifest.jsonl",
         "reference_source": "measured HTTP gateway telemetry on the same synthetic service; training, calibration and test seeds are disjoint",
         "training_streams": len(training), "training_windows": sum(map(len, training)),
         "reference_agent_counts": scales, "benign_training_scenarios": list(benign),

@@ -36,10 +36,11 @@ class StreamDetector:
             self.events.append(event)
         row = self.extractor.update(event)
         if row is not None:
-            self._score(row)
+            self._score(row, terminal=False)
         self.processing_ns += time.perf_counter_ns() - start
 
-    def _score(self, row: dict) -> None:
+    def _score(self, row: dict, *, terminal: bool = False) -> None:
+        row["terminal_flush"] = terminal
         scores = self.bundle.score(row, self.method_state)
         completed_at = time.time()
         row["processing_lag_ms"] = max(0.0, 1000 * (completed_at - row["end_ts"]))
@@ -51,6 +52,8 @@ class StreamDetector:
             if score > threshold and name not in self.alarms:
                 self.alarms[name] = {
                     "window_index": row["window_index"], "timestamp": row["end_ts"],
+                    "alarm_origin": "terminal_flush" if terminal else "during_stream",
+                    "windows_to_alarm": row["window_index"] + 1,
                     "requests_at_detection": row["cumulative_requests"],
                     "exposure_before_detection": row["cumulative_coverage"],
                     "detection_delay_ms": 1000 * max(0.0, row["end_ts"] - float(self.start_ts)),
@@ -64,7 +67,7 @@ class StreamDetector:
             start = time.perf_counter_ns()
             row = self.extractor.flush()
             if row is not None:
-                self._score(row)
+                self._score(row, terminal=True)
             self.processing_ns += time.perf_counter_ns() - start
             self.finalized = True
 
@@ -78,6 +81,12 @@ class StreamDetector:
             alarm = self.alarms.get(name)
             methods[name] = {
                 "detected": alarm is not None,
+                "alarm_origin": alarm["alarm_origin"] if alarm else None,
+                "terminal_only_alarm": bool(alarm and alarm["alarm_origin"] == "terminal_flush"),
+                "windows_to_alarm": alarm["windows_to_alarm"] if alarm else None,
+                "final_coverage": final_coverage,
+                "fraction_final_coverage_at_alarm": (alarm["exposure_before_detection"] / final_coverage
+                                                     if alarm and final_coverage > 0 else None),
                 "peak_score": self.peaks[name] if math.isfinite(self.peaks[name]) else None,
                 "threshold": self.bundle.thresholds[name] if math.isfinite(self.bundle.thresholds[name]) else None,
                 "exposure_before_detection": alarm["exposure_before_detection"] if alarm else None,
