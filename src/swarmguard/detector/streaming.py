@@ -77,7 +77,8 @@ class StreamDetector:
         coverage = sum(len(keys) for keys in self.extractor.cumulative.keys.values())
         from swarmguard.config import TOTAL_SEMANTIC_SPACE
         final_coverage = coverage / TOTAL_SEMANTIC_SPACE
-        for name in ALL_METHODS:
+        # Old evidence bundles lack newer method thresholds; replay them unchanged.
+        for name in self.bundle.thresholds:
             alarm = self.alarms.get(name)
             methods[name] = {
                 "detected": alarm is not None,
