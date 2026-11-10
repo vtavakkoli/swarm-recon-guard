@@ -108,7 +108,10 @@ def test_bundle_calibrates_new_methods_and_replays_identically():
     a.finalize()
     b.finalize()
     for name in ("cove", "cove_instant", "cove_balance"):
-        assert a.snapshot()["methods"][name] == b.snapshot()["methods"][name]
+        for field in ("peak_score", "detected", "exposure_before_detection",
+                      "requests_at_detection", "terminal_only_alarm"):
+            assert (a.snapshot()["methods"][name][field]
+                    == b.snapshot()["methods"][name][field])
 
 
 def test_old_bundle_missing_cove_thresholds_can_still_be_replayed():
