@@ -8,11 +8,13 @@ import numpy as np
 from scipy.special import logsumexp
 
 from swarmguard.detector.windows import BASE_FEATURES, EXTENDED_FEATURES, GRAPH_FEATURES, context_vector
+from swarmguard.detector.information import information_scores
 from swarmguard.reporting.distributional import GaussianModel
 
 METHODS = ("heuristic", "gaussian_ood", "gaussian_llr", "conditional_ood",
-           "conditional_llr", "graph", "kernel_mmd", "hybrid", "cusum", "hybrid_cusum")
-ABLATIONS = ("hybrid_no_graph", "hybrid_no_llr", "hybrid_no_heuristic")
+           "conditional_llr", "graph", "kernel_mmd", "hybrid", "cusum", "hybrid_cusum", "cove")
+ABLATIONS = ("hybrid_no_graph", "hybrid_no_llr", "hybrid_no_heuristic",
+             "cove_instant", "cove_balance")
 ALL_METHODS = METHODS + ABLATIONS
 
 
@@ -162,7 +164,7 @@ class DetectorBundle:
         mmd = float(np.sum((np.mean(history, axis=0) - self.rff_reference) ** 2))
         state["cusum"] = max(0.0, state.get("cusum", 0.0) + llr)
         state["hybrid_cusum"] = max(0.0, state.get("hybrid_cusum", 0.0) + hybrid - self.cusum_drift)
-        return {
+        scores = {
             "heuristic": heuristic,
             "gaussian_ood": float(self.benign.mahalanobis_sq(x)[0]),
             "gaussian_llr": self.attack.logpdf(row) - float(self.benign.logpdf(x)[0]),
@@ -173,6 +175,8 @@ class DetectorBundle:
             "hybrid_no_llr": (self.z("heuristic", heuristic) + self.z("graph", graph)) / 2,
             "hybrid_no_heuristic": (self.z("conditional_llr", llr) + self.z("graph", graph)) / 2,
         }
+        scores.update(information_scores(row, state))
+        return scores
 
     def calibrate(self, streams: list[list[dict]], alpha: float) -> dict:
         if not 0 < alpha < 1 or not streams:

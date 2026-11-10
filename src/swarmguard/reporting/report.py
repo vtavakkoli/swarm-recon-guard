@@ -33,6 +33,9 @@ METHOD_DESCRIPTIONS = {
     "hybrid": "Training-standardized fusion of heuristic, conditional likelihood ratio and graph evidence.",
     "cusum": "Sequential accumulation of conditional log-likelihood ratios.",
     "hybrid_cusum": "Sequential accumulation of fused evidence with a fixed training-configured drift allowance.",
+    "cove": "COVE: persistence-gated low-discrepancy resource-region coverage plus excess observed novelty; diagnostic-free and causal.",
+    "cove_instant": "COVE ablation: one-window region-regularity and excess novelty without the persistence gate.",
+    "cove_balance": "COVE ablation: two-window low-discrepancy region coverage without excess-novelty term.",
 }
 
 
