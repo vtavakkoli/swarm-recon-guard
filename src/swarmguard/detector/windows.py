@@ -8,6 +8,7 @@ import numpy as np
 
 from swarmguard.config import TOTAL_SEMANTIC_SPACE
 from swarmguard.detector.model import FAMILY_SPACES, RunRiskState, _prefix_to_int
+from swarmguard.detector.information import information_features
 
 BASE_FEATURES = ("novelty_ratio", "namespace_span", "gap_uniformity", "diagnostic_ratio", "family_entropy", "semantic_coverage")
 EXTENDED_FEATURES = BASE_FEATURES + ("cumulative_novelty", "cumulative_coverage")
@@ -158,6 +159,7 @@ class WindowExtractor:
             "end_ts": float(self.pending[-1].get("ts", 0)),
             "unique_resources": sum(len(keys) for keys in local.keys.values()),
         })
+        row.update(information_features(self.cumulative_regions, self.cumulative.keys))
         self.index += 1
         self.pending.clear()
         return row
