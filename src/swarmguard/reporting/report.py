@@ -34,6 +34,7 @@ METHOD_DESCRIPTIONS = {
     "cusum": "Sequential accumulation of conditional log-likelihood ratios.",
     "hybrid_cusum": "Sequential accumulation of fused evidence with a fixed training-configured drift allowance.",
     "cove": "COVE: persistence-gated low-discrepancy resource-region coverage plus excess observed novelty; diagnostic-free and causal.",
+    "cove_contextual": "Reference-trained, diagnostic-independent contextual COVE: regularity, excess novelty and observed event/identity horizon; calibrated on benign whole-stream maxima.",
     "cove_instant": "COVE ablation: one-window region-regularity and excess novelty without the persistence gate.",
     "cove_balance": "COVE ablation: two-window low-discrepancy region coverage without excess-novelty term.",
 }
@@ -324,6 +325,19 @@ def build_report(runs: list[dict[str, object]], manifest: dict[str, object], out
                          f"FPR {_fmt(selected['false_positive_rate'], True)}, "
                          f"missed attacks {selected['fn']}/{selected['n_attack']}, "
                          f"mean exposure at alarm or end {_fmt(selected['exposure_at_alarm_or_end_mean'], True)}.\n\n")
+    for candidate in ("cove", "cove_contextual", "cove_instant"):
+        item = next((row for row in method_summary if row["method"] == candidate), None)
+        if item:
+            summary_text += (
+                f"{candidate}: {item['tp']}/{item['n_attack']} attack alarms, "
+                f"{item['fp']}/{item['n_benign']} benign alarms, "
+                f"AUROC {_fmt(item['auroc'])}.\n\n"
+            )
+    summary_text += (
+        "Warning: realized false-alarm rates differ between methods; "
+        "do not claim matched-operating-point superiority or independent "
+        "generalization from this single synthetic service.\n\n"
+    )
     summary_text += "## Limits\n\n" + "\n".join("- " + warning for warning in warnings) + "\n"
     (out / "executive_summary.md").write_text(summary_text, encoding="utf-8")
 
