@@ -1,7 +1,10 @@
 name: swarm-recon-guard
 
 x-common: &common
-  build: .
+  build:
+    context: .
+    args:
+      SWARM_BUILD_COMMIT: "${SWARM_COMMIT:-not supplied}"
   pull_policy: build
   networks: [labnet]
   restart: "no"
