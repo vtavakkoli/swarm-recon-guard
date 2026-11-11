@@ -200,3 +200,26 @@ The final evidence ZIP is placed under the local results folder.
 It is an auditable synthetic-lab result, NOT independent real-world
 validation. Submission additionally requires a frozen confirmatory
 protocol and a revised manuscript with statistically defensible claims.
+
+
+## Prospective confirmatory protocol (not the same test data)
+
+After freezing the code and model settings, run:
+
+    docker compose run --rm experiment run --suite /app/scenarios/cove-confirmation.yaml
+
+This predeclared scenario uses a *different seed* (2026111101),
+20 repetitions of each of 14 scenarios at 3 scales (840 HTTP test
+runs: 300 benign, 540 attack), and 599 separately generated benign
+calibration streams. It automatically creates its complete reviewer
+evidence ZIP after the recorded experiments finish. Training and
+calibration seeds are disjoint from all test seeds.
+
+The primary comparison should be COVE-Contextual versus Hybrid CUSUM
+and COVE with attack detection, overall and explorer-specific FPR,
+run-level Wilson intervals, equal-event-prefix results, and early
+attacker-only exposure. Report all nine attack categories, especially
+mixed, camouflaged, independent and low-and-slow; count terminal-only
+alarms separately. Avoid post-hoc threshold/model selection on the new
+test results. This is still the *same synthetic API service*; the
+second-service/generalization limitation remains.
