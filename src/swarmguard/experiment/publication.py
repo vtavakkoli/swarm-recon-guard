@@ -15,7 +15,7 @@ import re
 import zipfile
 from pathlib import Path
 
-from swarmguard.detector.online import DetectorBundle
+from swarmguard.detector.online import ALL_METHODS, DetectorBundle
 from swarmguard.experiment.replay import verify_replay
 from swarmguard.experiment.reviewer_controls import evaluate
 from swarmguard.reporting.report import build_report
@@ -127,8 +127,8 @@ def finalize(run_dir: Path, output: Path, *, prefixes: tuple[int, ...] = (30, 30
     manifest = _read(run_dir / "manifest.json")
     provenance = _check_provenance(manifest, run_dir)
     bundle = DetectorBundle.from_dict(_read(run_dir / "detector_bundle.json"))
-    if set(bundle.thresholds) != set(bundle.score.__self__.thresholds):
-        raise RuntimeError("Invalid detector bundle thresholds")
+    if set(bundle.thresholds) != set(ALL_METHODS) or bundle.contextual is None:
+        raise RuntimeError("Publication bundle has incomplete or unsupported detector methods")
     print("[evidence] Checking full event replay", flush=True)
     replay_count = _audit_replay(run_dir, int(manifest["run_count"]), len(bundle.thresholds))
     print(f"[evidence] {replay_count} replayed decisions match", flush=True)
