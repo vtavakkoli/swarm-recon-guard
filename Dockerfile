@@ -6,6 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Immutable image-build declaration checked against the run-time experiment SHA.
+ARG SWARM_BUILD_COMMIT="not supplied"
+ENV SWARM_IMAGE_COMMIT="${SWARM_BUILD_COMMIT}"
+
 RUN addgroup --system app && adduser --system --ingroup app app
 
 COPY pyproject.toml README.md LICENSE /app/
