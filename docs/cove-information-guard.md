@@ -223,3 +223,19 @@ mixed, camouflaged, independent and low-and-slow; count terminal-only
 alarms separately. Avoid post-hoc threshold/model selection on the new
 test results. This is still the *same synthetic API service*; the
 second-service/generalization limitation remains.
+
+
+## Recommended clean-checkout launchers
+
+The safest supported entry points automatically derive the Git SHA from
+`git rev-parse HEAD`, reject uncommitted/untracked files, rebuild Docker,
+run the frozen suite, and verify that the evidence ZIP was generated.
+
+- Linux/WSL/macOS: `bash scripts/run_publication.sh cove-confirmation`
+- Windows PowerShell: `& .\\scripts\\run_publication.ps1 -Suite cove-confirmation`
+
+Replace `cove-confirmation` with `reviewer-controls` for the smaller
+420-run control matrix. Both suites now auto-generate all the previously
+missing replay and reviewer control files. The prospective confirmation
+suite is 840 runs, not yet executed by CI; it must be run before making
+independent statistical publication claims.
