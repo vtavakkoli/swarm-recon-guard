@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Freeze a clean Git revision and automatically generate all reviewer evidence.
+# Build current checkout, warn about local modifications and generate reviewer evidence.
 set -euo pipefail
 suite="${1:-cove-confirmation}"
 case "$suite" in
@@ -7,8 +7,7 @@ case "$suite" in
   *) echo "Allowed suites: reviewer-controls, cove-confirmation" >&2; exit 2 ;;
 esac
 if [[ -n "$(git status --porcelain)" ]]; then
-  echo "Refusing publication experiment from a dirty/untracked checkout." >&2
-  exit 1
+  echo "WARNING: Dirty or untracked files detected. Proceeding as requested; Git SHA alone may not reproduce the exact local source. A source fingerprint is recorded." >&2
 fi
 export SWARM_COMMIT
 SWARM_COMMIT="$(git rev-parse --verify HEAD)"
