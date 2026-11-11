@@ -23,7 +23,7 @@ from swarmguard.experiment.matching import marginal_profile, comparison
 from swarmguard.reporting.report import _write_csv
 from swarmguard.reporting.stats import wilson_interval
 
-CONTROL_METHODS = ("heuristic", "conditional_ood", "hybrid_cusum", "graph")
+CONTROL_METHODS = ("heuristic", "conditional_ood", "hybrid_cusum", "graph", "cove", "cove_contextual")
 
 
 def grouped_events(path: Path, key: str):
@@ -163,7 +163,7 @@ def _scored_prefix(bundle, config, events, horizon):
         detector.update(event)
     detector.finalize()
     snap = detector.snapshot()
-    return {method: snap["methods"][method] for method in CONTROL_METHODS} | {
+    return {method: snap["methods"][method] for method in CONTROL_METHODS if method in snap["methods"]} | {
         "windows": snap["windows_processed"], "window_rows": detector.windows
     }
 
@@ -182,6 +182,7 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
     calibration = json.loads((run_dir / "calibration.json").read_text())
     config = calibration["window_config"]
     bundle = DetectorBundle.from_dict(json.loads((run_dir / "detector_bundle.json").read_text()))
+    methods = tuple(method for method in CONTROL_METHODS if method in bundle.thresholds)
     training, benign_calibration = [], []
     calibration_prefix = defaultdict(list)
     ablation_train, ablation_cal = [], []
@@ -195,7 +196,7 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
             for horizon in prefixes:
                 if len(events) >= horizon:
                     result = _scored_prefix(bundle, config, events, horizon)
-                    for method in CONTROL_METHODS:
+                    for method in methods:
                         calibration_prefix[(horizon, method)].append(result[method]["peak_score"])
         if diagnostics_ablation:
             stripped = [{**e, "diagnostic": "0"} for e in events]
@@ -238,7 +239,7 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
             if len(events) < horizon:
                 continue  # never conflate an incomplete stream with an equal-length prefix
             sampled = _scored_prefix(bundle, config, events, horizon)
-            for method in CONTROL_METHODS:
+            for method in methods:
                 threshold = thresholds.get((horizon, method), math.inf)
                 observed = sampled[method]
                 first_crossing = next((w for w in sampled["window_rows"]
@@ -254,7 +255,7 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
                 })
         if ablated:
             sampled = _scored_prefix(ablated, config, [{**e, "diagnostic": "0"} for e in events], len(events))
-            for method in CONTROL_METHODS:
+            for method in methods:
                 observed = sampled[method]
                 ablation_rows.append(common | {
                     "method": method, "peak_score": observed["peak_score"],
@@ -286,7 +287,7 @@ def evaluate(run_dir: Path, *, alpha: float = 0.01, prefixes=(30, 300), diagnost
     _write_csv(run_dir / "paired_marginal_diagnostics.csv", matches)
     metadata = {
         "alpha": alpha, "prefixes": list(prefixes),
-        "methods": list(CONTROL_METHODS),
+        "methods": list(methods),
         "diagnostics_ablation": diagnostics_ablation,
         "baseline_calibration": baseline_metadata,
         "interpretation": [
