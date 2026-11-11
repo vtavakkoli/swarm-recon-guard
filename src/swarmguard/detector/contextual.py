@@ -27,14 +27,17 @@ REGULARIZATION = 0.02
 
 def feature_vector(row: dict) -> np.ndarray:
     """No diagnostic flag, scenario, identity string, or future state."""
+    raw = np.asarray([float(row[key]) for key in FEATURES], dtype=float)
+    if not np.all(np.isfinite(raw)) or raw[0] < 0 or raw[2] < 0 or raw[3] < 0:
+        raise ValueError("non-finite or negative contextual coordination count")
     vector = np.asarray((
-        np.log1p(max(0.0, float(row[FEATURES[0]]))),
-        float(row[FEATURES[1]]),
-        np.log1p(max(0.0, float(row[FEATURES[2]]))),
-        np.log1p(max(0.0, float(row[FEATURES[3]]))),
+        np.log1p(raw[0]),
+        raw[1],
+        np.log1p(raw[2]),
+        np.log1p(raw[3]),
     ), dtype=float)
     if not np.all(np.isfinite(vector)):
-        raise ValueError("non-finite contextual coordination feature")
+        raise ValueError("non-finite contextual feature transform")
     return vector
 
 
