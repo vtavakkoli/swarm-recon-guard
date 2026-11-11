@@ -428,6 +428,13 @@ async def run_suite(suite_path: Path, result_root: Path | None = None) -> Path:
         raise RuntimeError(f"Git revision mismatch: image={built!r}, experiment={declared!r}. Rebuild with SWARM_COMMIT set before docker compose build.")
     suite = yaml.safe_load(suite_path.read_text())
     validate_suite(suite)
+    if suite.get("auto_finalize_evidence", False):
+        if not re.fullmatch(r"[a-f0-9]{40}", declared) or declared != built:
+            raise RuntimeError("Automatic publication evidence needs matching 40-character SWARM_COMMIT and Docker build SHA")
+        if suite.get("calibration", {}).get("source", "http") != "http":
+            raise RuntimeError("Automatic publication evidence needs measured HTTP reference calibration")
+        if not suite.get("save_event_traces", False) or not suite.get("online", {}).get("enabled", True):
+            raise RuntimeError("Automatic publication evidence needs saved traces and online scoring")
     scenarios = suite.get("scenarios", list(SCENARIOS))
     scales = [int(n) for n in suite["agent_counts"]]
     repeats = int(suite.get("repeats", 5))
