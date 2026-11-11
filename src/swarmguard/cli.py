@@ -32,6 +32,13 @@ def generate(output: Path = typer.Option(...), agents: str = "10,100,1000,10000"
 @app.command(name="run")
 def run_command(suite: Path = typer.Option(..., exists=True, readable=True), result_root: Path | None = None):
     out=asyncio.run(run_suite(suite,result_root=result_root))
+    suite_data = yaml.safe_load(suite.read_text(encoding="utf-8"))
+    if suite_data.get("auto_finalize_evidence", False):
+        from swarmguard.experiment.publication import finalize
+        destination = out.parent / f"{out.name}-evidence.zip"
+        prefixes = tuple(int(x) for x in suite_data.get("evidence_event_prefixes", (30, 300)))
+        finished = finalize(out, destination, prefixes=prefixes)
+        typer.echo(f"Complete reviewer evidence: {destination} (SHA256 {finished['sha256']})")
     typer.echo(f"Completed. Report: {out / 'report.html'}")
     typer.echo(f"Summary: {out / 'executive_summary.md'}")
     typer.echo(f"Online comparisons: {out / 'online_summary.csv'}")
