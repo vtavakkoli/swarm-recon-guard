@@ -110,6 +110,7 @@ def test_provenance_rejects_mislabeled_legacy_results(tmp_path):
         "reference_source": "measured HTTP gateway telemetry",
         "finite_thresholds": True, "alpha": 0.1,
     }))
+    (tmp_path / "detector_bundle.json").write_text(json.dumps({"contextual": {"schema_version": 1}}))
     p = {"git_commit": "a" * 40, "image_build_commit": "b" * 40,
          "source_tree_sha256": "0" * 64, "status": "completed"}
     with pytest.raises(ValueError, match="differs"):
