@@ -141,3 +141,101 @@ but introducing an untrained GNN into the present small synthetic
 benchmark would add model capacity and confounding without independent
 generalization evidence. The proposed baseline is deliberately simple,
 fully interpretable and easy to replay.
+
+
+## COVE-Contextual — reference-trained benign-explorer discriminator
+
+The \`cove_contextual\` method is a deliberately low-capacity, transparent
+four-feature supervised comparator. Its causal input is
+
+\[
+x_t = (\log(1+X^2_t),\;G_t,\;\log(1+N_{\rm requests,t}),\;\log(1+N_{\rm identities,t})).
+\]
+
+It uses a regularized logistic model fitted ONLY to disjoint, labeled
+reference **training** streams. Each reference stream contributes equal
+total mass within its class, and the two classes receive equal total mass.
+The training objective uses L2 penalty 0.02 on slopes, not intercept.
+Diagnostic flags, identity IDs, attack membership, policy names and test
+labels are excluded from inference. Separate held-out benign **stream-max**
+calibration determines its threshold; the COVE original and two ablations
+remain intact and separately calibrated.
+
+The original 420 HTTP test runs were examined during development.
+Retrospective improvements are exploratory, not confirmatory evidence of
+novel-attack or production generalization. Benign explorers remain hard
+negatives. At a nominal 1% stream-level alpha, calibration requires >=99
+benign streams for any finite threshold; even then, subgroup/production
+false-alarm guarantees are NOT established.
+
+## Finish the full evidence (all reviewer controls)
+
+Use a clean Git checkout and set SWARM_COMMIT **before** rebuilding Docker,
+or the experiment rejects a source/image mismatch. The earlier legacy
+archive cannot be retrospectively relabeled as if newer code had produced it.
+
+After a full run, execute the following command from a host shell with
+the RUN_NAME replaced by the output directory's basename:
+
+    docker compose run --rm --entrypoint python experiment -m swarmguard.experiment.publication --run-dir /app/results/RUN_NAME --output /app/results/RUN_NAME-evidence.zip --prefixes 30,300
+
+For the full experimental run in Bash:
+
+    git checkout main && git pull --ff-only origin main
+    export SWARM_COMMIT="$(git rev-parse HEAD)"
+    docker compose build --no-cache
+    docker compose run --rm experiment run --suite /app/scenarios/reviewer-controls.yaml
+
+On Windows PowerShell set the revision using:
+
+    $env:SWARM_COMMIT = (git rev-parse HEAD).Trim()
+
+The evidence finalizer verifies every replay decision, rebuilds the
+individual-level OOD baseline, refits diagnostic-disabled controls,
+recalibrates equal-event-prefix comparisons, produces the matched-marginal
+checks, and packages the full result with a source-code fingerprint,
+image-build SHA, Git commit, and independently verified SHA-256 hashes.
+
+The final evidence ZIP is placed under the local results folder.
+It is an auditable synthetic-lab result, NOT independent real-world
+validation. Submission additionally requires a frozen confirmatory
+protocol and a revised manuscript with statistically defensible claims.
+
+
+## Prospective confirmatory protocol (not the same test data)
+
+After freezing the code and model settings, run:
+
+    docker compose run --rm experiment run --suite /app/scenarios/cove-confirmation.yaml
+
+This predeclared scenario uses a *different seed* (2026111101),
+20 repetitions of each of 14 scenarios at 3 scales (840 HTTP test
+runs: 300 benign, 540 attack), and 599 separately generated benign
+calibration streams. It automatically creates its complete reviewer
+evidence ZIP after the recorded experiments finish. Training and
+calibration seeds are disjoint from all test seeds.
+
+The primary comparison should be COVE-Contextual versus Hybrid CUSUM
+and COVE with attack detection, overall and explorer-specific FPR,
+run-level Wilson intervals, equal-event-prefix results, and early
+attacker-only exposure. Report all nine attack categories, especially
+mixed, camouflaged, independent and low-and-slow; count terminal-only
+alarms separately. Avoid post-hoc threshold/model selection on the new
+test results. This is still the *same synthetic API service*; the
+second-service/generalization limitation remains.
+
+
+## Recommended clean-checkout launchers
+
+The safest supported entry points automatically derive the Git SHA from
+`git rev-parse HEAD`, reject uncommitted/untracked files, rebuild Docker,
+run the frozen suite, and verify that the evidence ZIP was generated.
+
+- Linux/WSL/macOS: `bash scripts/run_publication.sh cove-confirmation`
+- Windows PowerShell: `& .\\scripts\\run_publication.ps1 -Suite cove-confirmation`
+
+Replace `cove-confirmation` with `reviewer-controls` for the smaller
+420-run control matrix. Both suites now auto-generate all the previously
+missing replay and reviewer control files. The prospective confirmation
+suite is 840 runs, not yet executed by CI; it must be run before making
+independent statistical publication claims.

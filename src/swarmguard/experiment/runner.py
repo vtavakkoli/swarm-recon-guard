@@ -406,9 +406,35 @@ def validate_suite(suite: dict) -> None:
             raise ValueError(f"{name} must be in (0,1]")
 
 
+def _source_tree_digest() -> str:
+    """Bind the experiment to the exact Python source copied into the Docker image."""
+    root = Path(__file__).resolve().parents[2]
+    sources = sorted((root / "swarmguard").rglob("*.py"))
+    if not sources:
+        raise RuntimeError("Cannot fingerprint installed SwarmReconGuard code")
+    digest = hashlib.sha256()
+    for path in sources:
+        digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
 async def run_suite(suite_path: Path, result_root: Path | None = None) -> Path:
+    # Fail before making HTTP requests if a stale Docker image would be mislabeled.
+    import re
+    declared = os.getenv("SWARM_COMMIT", "not supplied")
+    built = os.getenv("SWARM_IMAGE_COMMIT", "not supplied")
+    if declared != built and (re.fullmatch(r"[a-f0-9]{40}", declared) or re.fullmatch(r"[a-f0-9]{40}", built)):
+        raise RuntimeError(f"Git revision mismatch: image={built!r}, experiment={declared!r}. Rebuild with SWARM_COMMIT set before docker compose build.")
     suite = yaml.safe_load(suite_path.read_text())
     validate_suite(suite)
+    if suite.get("auto_finalize_evidence", False):
+        if not re.fullmatch(r"[a-f0-9]{40}", declared) or declared != built:
+            raise RuntimeError("Automatic publication evidence needs matching 40-character SWARM_COMMIT and Docker build SHA")
+        if suite.get("calibration", {}).get("source", "http") != "http":
+            raise RuntimeError("Automatic publication evidence needs measured HTTP reference calibration")
+        if not suite.get("save_event_traces", False) or not suite.get("online", {}).get("enabled", True):
+            raise RuntimeError("Automatic publication evidence needs saved traces and online scoring")
     scenarios = suite.get("scenarios", list(SCENARIOS))
     scales = [int(n) for n in suite["agent_counts"]]
     repeats = int(suite.get("repeats", 5))
@@ -427,7 +453,10 @@ async def run_suite(suite_path: Path, result_root: Path | None = None) -> Path:
         "python": platform.python_version(), "platform": platform.platform(),
         "cpu_count": os.cpu_count(), "machine": platform.machine(), "system_specification": _system_specification(),
         "suite_sha256": hashlib.sha256(suite_path.read_bytes()).hexdigest(),
-        "git_commit": os.getenv("SWARM_COMMIT", "not supplied"),
+        "git_commit": declared,
+        "image_build_commit": built,
+        "source_tree_sha256": _source_tree_digest(),
+        "provenance_scope": "declared Git SHA and deterministic packaged Python source fingerprint; confirm clean Git worktree before publication",
         "safety_scope": "synthetic internal Docker service only",
         "evaluation_source": "measured HTTP/gateway telemetry", "status": "in_progress",
     }

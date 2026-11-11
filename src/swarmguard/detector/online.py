@@ -9,10 +9,11 @@ from scipy.special import logsumexp
 
 from swarmguard.detector.windows import BASE_FEATURES, EXTENDED_FEATURES, GRAPH_FEATURES, context_vector
 from swarmguard.detector.information import information_scores
+from swarmguard.detector.contextual import ContextualCoordination
 from swarmguard.reporting.distributional import GaussianModel
 
 METHODS = ("heuristic", "gaussian_ood", "gaussian_llr", "conditional_ood",
-           "conditional_llr", "graph", "kernel_mmd", "hybrid", "cusum", "hybrid_cusum", "cove")
+           "conditional_llr", "graph", "kernel_mmd", "hybrid", "cusum", "hybrid_cusum", "cove", "cove_contextual")
 ABLATIONS = ("hybrid_no_graph", "hybrid_no_llr", "hybrid_no_heuristic",
              "cove_instant", "cove_balance")
 ALL_METHODS = METHODS + ABLATIONS
@@ -111,6 +112,7 @@ class DetectorBundle:
     thresholds: dict[str, float] = field(default_factory=dict)
     mmd_history: int = 8
     cusum_drift: float = 0.5
+    contextual: ContextualCoordination | None = None
 
     @classmethod
     def fit(cls, training_streams: list[list[dict]], *, seed: int = 42,
@@ -145,7 +147,8 @@ class DetectorBundle:
         embedded = math.sqrt(2 / rff_dimensions) * np.cos(residuals @ weights + phase)
         return cls(base_benign, base_attack, conditional_benign, conditional_attack, graph_benign,
                    normalization, weights, phase, embedded.mean(axis=0),
-                   mmd_history=mmd_history, cusum_drift=cusum_drift)
+                   mmd_history=mmd_history, cusum_drift=cusum_drift,
+                   contextual=ContextualCoordination.fit(training_streams))
 
     def z(self, name: str, value: float) -> float:
         mu, std = self.normalization[name]
@@ -176,6 +179,8 @@ class DetectorBundle:
             "hybrid_no_heuristic": (self.z("conditional_llr", llr) + self.z("graph", graph)) / 2,
         }
         scores.update(information_scores(row, state))
+        if self.contextual is not None:
+            scores["cove_contextual"] = self.contextual.score(row)
         return scores
 
     def calibrate(self, streams: list[list[dict]], alpha: float) -> dict:
@@ -216,6 +221,7 @@ class DetectorBundle:
             "rff_phase": self.rff_phase.tolist(), "rff_reference": self.rff_reference.tolist(),
             "thresholds": {name: value if math.isfinite(value) else None for name, value in self.thresholds.items()},
             "mmd_history": self.mmd_history, "cusum_drift": self.cusum_drift,
+            "contextual": self.contextual.to_dict() if self.contextual is not None else None,
         }
 
     @classmethod
@@ -230,4 +236,5 @@ class DetectorBundle:
             np.asarray(data["rff_weights"]), np.asarray(data["rff_phase"]), np.asarray(data["rff_reference"]),
             {key: math.inf if value is None else float(value) for key, value in data["thresholds"].items()},
             int(data["mmd_history"]), float(data["cusum_drift"]),
+            ContextualCoordination.from_dict(data["contextual"]) if data.get("contextual") is not None else None,
         )

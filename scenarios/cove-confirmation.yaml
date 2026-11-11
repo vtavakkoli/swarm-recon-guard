@@ -1,0 +1,62 @@
+name: cove-confirmation
+description: Prospective, separately seeded, confirmatory HTTP experiment for frozen COVE-Contextual and all existing methods. Do not alter method features or hyperparameters after observing these results.
+auto_finalize_evidence: true
+evidence_event_prefixes: [30, 300]
+agent_counts: [10, 100, 1000]
+scenarios:
+  - benign_flash
+  - benign_diagnostic
+  - benign_explorer
+  - benign_bulk
+  - benign_explorer_diagnostic
+  - independent_recon
+  - independent_recon_no_diagnostic
+  - coordinated_swarm
+  - swarm_no_diagnostic
+  - matched_swarm
+  - matched_swarm_diagnostic
+  - camouflaged_swarm
+  - low_and_slow_swarm
+  - mixed_swarm
+repeats: 20
+requests_per_agent: 3
+concurrency: 32
+arrival_window_ms: 10000
+seed: 2026111101
+attacker_fraction: 0.20
+camouflage_fraction: 0.50
+slow_delay_s: 0.20
+baseline_identity_request_limit: 20
+strict_telemetry: true
+transport_retries: 3
+transport_retry_backoff_ms: 50
+telemetry_drain_timeout_s: 120
+save_event_traces: true
+detector:
+  threshold: 0.72
+  min_events: 10
+  consecutive_windows: 2
+  evaluation_interval: 100
+online:
+  enabled: true
+  window_events: 64
+  initial_window_events: 16
+  window_seconds: 1.0
+  min_window_events: 8
+  shrinkage: 0.15
+  rff_dimensions: 64
+  mmd_history: 8
+  cusum_drift: 0.50
+calibration:
+  source: http
+  training_repeats: 3
+  streams: 599
+  alpha: 0.01
+  benign_scenarios: [benign_flash, benign_diagnostic, benign_explorer, benign_bulk, benign_explorer_diagnostic]
+  attack_scenarios: [independent_recon, coordinated_swarm]
+statistical:
+  enabled: true
+  alpha: 0.01
+  shrinkage: 0.15
+  hybrid_weight: 0.50
+  validation_modes: [leave_repeat_out, leave_scale_out, leave_attack_out]
