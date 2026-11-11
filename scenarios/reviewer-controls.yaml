@@ -1,4 +1,6 @@
 name: reviewer-controls
+auto_finalize_evidence: true
+evidence_event_prefixes: [30, 300]
 description: Low-concurrency non-saturated HTTP control matrix; includes matched diagnostic usage and per-policy unseen results. Run separately from original publication cohort.
 agent_counts: [10, 100, 1000]
 scenarios:
