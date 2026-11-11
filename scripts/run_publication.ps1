@@ -1,5 +1,5 @@
 <#
-Freeze clean Git checkout, build matching Docker image, auto-generate evidence.
+Build Docker from the current checkout, warn about local modifications, auto-generate evidence.
 Usage: .\scripts\run_publication.ps1 -Suite cove-confirmation
 #>
 param(
@@ -7,10 +7,11 @@ param(
     [string]$Suite = 'cove-confirmation'
 )
 $ErrorActionPreference = 'Stop'
-if (git status --porcelain) {
-    throw 'Refusing publication experiment from a dirty or untracked Git checkout.'
-}
+$workingChanges = @(git status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw 'Git status failed.' }
+if ($workingChanges.Count -gt 0) {
+    Write-Warning 'Local modified/untracked files detected. Proceeding as requested; results may not be exactly reproducible from the recorded Git commit. The experiment records its packaged source fingerprint.'
+}
 $env:SWARM_COMMIT = (git rev-parse --verify HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $env:SWARM_COMMIT -notmatch '^[a-f0-9]{40}$') {
     throw 'Unable to identify an exact Git commit.'
